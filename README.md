@@ -1,10 +1,13 @@
 # wtfpulse
 
-**wtfpulse** is a blazing fast, asynchronous CLI client for the WhatPulse Web API, built with Rust. It allows developers and power users to programmatically access their WhatPulse statistics, including user details, computer lists, and recent pulses, directly from the terminal.
+**wtfpulse** is a high-performance, asynchronous Rust CLI tool and TUI dashboard for the WhatPulse Web API. Beyond simple data retrieval, it offers interactive data visualization, advanced filtering, and physics-based energy estimation for your typing habits—all from the comfort of your terminal.
+
+![Dashboard Screenshot](screenshot.png)
 
 ## Introduction
 
 ### Purpose and Scope
+
 The goal of `wtfpulse` is to provide a type-safe, efficient, and easy-to-use command-line interface for the WhatPulse Web API. Unlike the local Client API (which requires the WhatPulse client to be running locally), this tool connects directly to `api.whatpulse.org`, making it suitable for server-side scripts, CI/CD pipelines, or standalone monitoring tools.
 
 ### Target Audience
@@ -80,17 +83,55 @@ If no subcommand is provided, it defaults to the **TUI Dashboard**.
 - **Raw Access**: Query any API endpoint manually for debugging or new features.
 
 ### TUI Dashboard Features
-The interactive dashboard (`wtfpulse tui`) offers deep insights into your data:
-- **Time Period Selection**: Quickly filter stats by Today, Yesterday, Week, Month, Year, or All time.
-- **Custom Date Picker**: Select a specific date range using an interactive calendar popup.
-- **Dynamic Graphing**: Visual sparklines showing pulse activity over the selected period.
-- **Responsive Layout**: Adapts to different terminal sizes.
 
-**Navigation**:
-- `Tab` / `Arrow Keys`: Switch between main tabs (Dashboard, Computers, etc.).
-- `h` / `l` or `[` / `]`: Cycle through time periods on the Dashboard.
-- `/`: Switch to Custom mode and open Date Picker.
-- `Enter`: Open the Date Picker (when "Custom" period is active).
+The interactive dashboard (`wtfpulse tui` or just `wtfpulse`) offers a rich, terminal-based user interface for monitoring your stats.
+
+#### Navigation & Global Controls
+| Key | Action |
+| :--- | :--- |
+| `Tab` / `Right Arrow` | Switch to the next tab (Dashboard, Computers, Pulses, etc.). |
+| `Left Arrow` | Switch to the previous tab. |
+| `r` | **Refresh** data from the API. |
+| `q` | **Quit** the application immediately. |
+| `Esc` | **Quit** the application (unless a popup is open). |
+
+#### Dashboard Tab
+The main **Dashboard** tab provides a summary of your activity with powerful time-based filtering.
+
+**Time Period Selection:**
+You can filter your displayed stats (Keys, Clicks, Download, Upload) by specific time periods.
+
+| Key | Action |
+| :--- | :--- |
+| `h` / `[` | Cycle time period **backward** (e.g., Today -> Custom -> All). |
+| `l` / `]` | Cycle time period **forward** (e.g., Today -> Yesterday -> Week). |
+| `/` | **Quick Switch to Custom Range**: Automatically selects "Custom" and opens the Date Picker. |
+| `Enter` | Open the Date Picker (only when "Custom" period is already active). |
+
+**Available Periods:**
+- **Today**: Stats for the current day.
+- **Yesterday**: Stats for the previous day.
+- **Week**: Last 7 days.
+- **Month**: Last 30 days.
+- **Year**: Last 365 days.
+- **All**: Lifetime statistics (Default).
+- **Custom**: User-defined date range.
+
+#### Custom Date Picker
+When you press `/` or select "Custom", a calendar popup appears, allowing you to define a specific analysis range.
+
+**How to Use:**
+1.  **Start Date**: The picker opens asking for the *Start Date*. Navigate to your desired start date and press `Enter`.
+2.  **End Date**: The prompt changes to *End Date*. Navigate to your desired end date and press `Enter`.
+3.  **Result**: The dashboard updates to show stats *only* for pulses within that inclusive range.
+
+**Picker Controls:**
+| Key | Action |
+| :--- | :--- |
+| `Arrow Keys` | Move the cursor day-by-day or week-by-week. |
+| `PgUp` / `PgDn` | Jump to the previous or next month. |
+| `Enter` | Confirm the selection (Start Date first, then End Date). |
+| `Esc` | **Cancel/Close** the popup without applying changes. |
 
 ### Practical Examples
 
