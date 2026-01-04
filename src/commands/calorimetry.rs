@@ -264,7 +264,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
 
         // Case 1: Loading
-        app.loading = true;
+        app.user_loading = true;
         app.energy_stats = None;
         terminal.draw(|f| {
             render_tui(f, &app, f.area());
@@ -283,7 +283,7 @@ mod tests {
         assert!(found_loading, "Should display Loading...");
 
         // Case 2: Data loaded
-        app.loading = false;
+        app.user_loading = false;
         app.energy_stats = Some(calculate_energy("1000", None).unwrap());
         terminal.draw(|f| {
             render_tui(f, &app, f.area());

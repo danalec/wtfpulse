@@ -122,7 +122,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
 
         // Case 1: Loading
-        app.loading = true;
+        app.user_loading = true;
         terminal.draw(|f| {
             render_tui(f, &app, f.area());
         }).unwrap();
@@ -141,7 +141,7 @@ mod tests {
             extra: HashMap::new(),
         });
 
-        app.loading = false;
+        app.user_loading = false;
         app.user_stats = Some(UserResponse {
             id: Some("12345".to_string()),
             account_name: Some("TestUser".to_string()),

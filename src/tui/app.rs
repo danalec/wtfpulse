@@ -128,6 +128,7 @@ impl App {
 
                 if !handled {
                     match key.code {
+                        KeyCode::Esc => return true,
                         KeyCode::Tab | KeyCode::Right => {
                             self.current_tab = (self.current_tab + 1) % pages.len();
                         }

@@ -16,7 +16,7 @@ use commands::Commands;
 #[command(about = "A WhatPulse Web API client", long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[tokio::main]
@@ -37,5 +37,6 @@ async fn main() -> Result<()> {
 
     let client = WhatpulseClient::new(&api_key).await?;
 
-    args.command.execute(&client).await
+    let command = args.command.unwrap_or(Commands::Tui);
+    command.execute(&client).await
 }

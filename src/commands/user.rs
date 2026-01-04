@@ -40,7 +40,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
             };
             true
         }
-        KeyCode::Char('l') | KeyCode::Char(']') | KeyCode::Char('/') => {
+        KeyCode::Char('l') | KeyCode::Char(']') => {
             app.dashboard_period = match app.dashboard_period {
                 TimePeriod::Today => TimePeriod::Yesterday,
                 TimePeriod::Yesterday => TimePeriod::Week,
@@ -50,6 +50,17 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                 TimePeriod::All => TimePeriod::Custom,
                 TimePeriod::Custom => TimePeriod::Today,
             };
+            true
+        }
+        KeyCode::Char('/') => {
+            app.dashboard_period = TimePeriod::Custom;
+            app.date_picker.open = true;
+            app.date_picker.selection_step = SelectionStep::Start;
+            if app.date_picker.start_date.is_none() {
+                app.date_picker.current_selection = chrono::Local::now().date_naive();
+            } else {
+                app.date_picker.current_selection = app.date_picker.start_date.unwrap();
+            }
             true
         }
         KeyCode::Enter => {
@@ -216,7 +227,7 @@ fn render_period_selector(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::ALL).title(" Time Period (h/l or [/]: Select) "))
+        .block(Block::default().borders(Borders::ALL).title(" Time Period (h/l: Cycle | /: Custom Date) "))
         .select(selected_index)
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD | Modifier::UNDERLINED));
@@ -288,7 +299,7 @@ fn render_user_stats(f: &mut Frame, app: &App, area: Rect) {
              if let (Some(s), Some(e)) = (app.date_picker.start_date, app.date_picker.end_date) {
                  text.push_str(&format!("\n\nCustom Range: {} to {}", s, e));
              } else {
-                 text.push_str("\n\nCustom Range: (Select with Enter)");
+                 text.push_str("\n\nCustom Range: (Press / to select dates)");
              }
         }
 
@@ -348,7 +359,8 @@ fn render_pulse_graph(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_date_picker(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default().title(" Date Picker ").borders(Borders::ALL).style(Style::default().bg(Color::DarkGray));
-    let area = centered_rect(60, 20, area); // 60x20 popup
+    // Use fixed size for calendar (approx 40x16 is good for readability)
+    let area = centered_fixed_area(40, 16, area);
     f.render_widget(Clear, area);
     f.render_widget(block.clone(), area);
 
@@ -447,24 +459,16 @@ fn render_date_picker(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new("Arrows: Move | PgUp/Dn: Month | Enter: Select | Esc: Cancel").alignment(Alignment::Center).style(Style::default().fg(Color::DarkGray)), footer_area);
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
+fn centered_fixed_area(width: u16, height: u16, area: Rect) -> Rect {
+    let x = if area.width > width { (area.width - width) / 2 } else { 0 };
+    let y = if area.height > height { (area.height - height) / 2 } else { 0 };
+    
+    Rect {
+        x: area.x + x,
+        y: area.y + y,
+        width: width.min(area.width),
+        height: height.min(area.height),
+    }
 }
 
 #[cfg(test)]

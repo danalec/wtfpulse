@@ -74,7 +74,7 @@ The command system uses a "drag-and-drop" style architecture. Each command is a 
 
 The TUI (Terminal User Interface) follows The Elm Architecture (Model-View-Update) pattern partially, adapted for Rust.
 
-*   **App State (`src/tui/app.rs`)**: Holds all data, loading states, and configuration.
+*   **App State (`src/tui/app.rs`)**: Holds all data, loading states, and configuration (including `DatePickerState` and `TimePeriod` selection).
 *   **Events (`src/tui/event.rs`)**: Handles keyboard input and tick events.
 *   **UI Components**: Rendering logic is distributed:
     *   **Common Widgets**: Located in `src/tui/` (e.g., `tabs.rs`).

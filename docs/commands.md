@@ -59,10 +59,22 @@ Fun Comparisons:
 Launches the interactive Terminal User Interface (dashboard). This mode provides a tabbed interface to view user stats, computer lists, and calorimetry data in a more visual way.
 
 **Controls:**
-*   **Tab / Left / Right**: Navigate between tabs.
-*   **p**: Cycle through keyboard switch profiles (in Calorimetry tab).
-*   **r**: Refresh data.
-*   **q / Esc**: Quit.
+*   **Global Navigation**:
+    *   **Tab / Left / Right**: Navigate between main tabs.
+    *   **q / Esc**: Quit.
+    *   **r**: Refresh data.
+
+*   **Dashboard Tab**:
+    *   **h / l** or **[ / ]**: Cycle through time periods (Today, Yesterday, Week, etc.).
+    *   **/**: Switch to "Custom" period and open Date Picker.
+    *   **Enter**: Open Date Picker (if "Custom" period is already selected).
+    *   **Date Picker**:
+        *   **Arrow Keys**: Navigate calendar.
+        *   **Enter**: Select Start/End date.
+        *   **Esc**: Cancel.
+
+*   **Calorimetry Tab**:
+    *   **p**: Cycle through keyboard switch profiles.
 
 **Usage:**
 ```bash

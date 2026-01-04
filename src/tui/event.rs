@@ -17,7 +17,7 @@ pub fn start_event_listener(tx: mpsc::Sender<Action>) {
                 match event::read() {
                     Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => {
+                            KeyCode::Char('q') => {
                                 let _ = tx.blocking_send(Action::Quit);
                                 break;
                             }

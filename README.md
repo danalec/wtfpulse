@@ -66,16 +66,31 @@ If you want to contribute or add new commands, check out the [Contribution Guide
 
 `wtfpulse` uses a subcommand structure. The general syntax is:
 ```bash
-wtfpulse <SUBCOMMAND>
+wtfpulse [SUBCOMMAND]
 ```
 
+If no subcommand is provided, it defaults to the **TUI Dashboard**.
+
 ### Core Features
-- **TUI Dashboard**: Interactive terminal interface with dynamic tab system.
+- **TUI Dashboard**: Interactive terminal interface with dynamic tab system, real-time filtering, and custom date range analysis.
 - **User Stats**: View global keys, clicks, and rank.
 - **Pulses**: List recent pulse history.
 - **Computers**: Enumerate all computers associated with the account.
 - **Calorimetry**: Calculate energy burned by typing (physics-based estimation).
 - **Raw Access**: Query any API endpoint manually for debugging or new features.
+
+### TUI Dashboard Features
+The interactive dashboard (`wtfpulse tui`) offers deep insights into your data:
+- **Time Period Selection**: Quickly filter stats by Today, Yesterday, Week, Month, Year, or All time.
+- **Custom Date Picker**: Select a specific date range using an interactive calendar popup.
+- **Dynamic Graphing**: Visual sparklines showing pulse activity over the selected period.
+- **Responsive Layout**: Adapts to different terminal sizes.
+
+**Navigation**:
+- `Tab` / `Arrow Keys`: Switch between main tabs (Dashboard, Computers, etc.).
+- `h` / `l` or `[` / `]`: Cycle through time periods on the Dashboard.
+- `/`: Switch to Custom mode and open Date Picker.
+- `Enter`: Open the Date Picker (when "Custom" period is active).
 
 ### Practical Examples
 
