@@ -1,4 +1,4 @@
-use crate::client::{PulseResponse, WhatpulseClient};
+use crate::client::WhatpulseClient;
 use crate::commands::TuiPage;
 use crate::tui::app::App;
 use anyhow::Result;
@@ -10,7 +10,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Row, Table},
 };
-use std::collections::HashMap;
 
 inventory::submit! {
     TuiPage {
@@ -26,22 +25,17 @@ fn handle_key(_app: &mut App, _key: KeyEvent) -> bool {
 }
 
 pub async fn execute(client: &WhatpulseClient) -> Result<()> {
-    let pulses_map = client
-        .get_resource::<HashMap<String, PulseResponse>>("pulses")
-        .await?;
-    println!("Found {} pulses:", pulses_map.len());
+    let pulses = client.get_pulses().await?;
+    println!("Found {} pulses:", pulses.len());
 
-    // Convert to vector and sort by key (Pulse ID) descending to show newest first
-    let mut pulses: Vec<_> = pulses_map.into_iter().collect();
-    // Pulse IDs are strings like "Pulse-123", so string sort works reasonably well for ordering
-    pulses.sort_by(|a, b| b.0.cmp(&a.0));
-
-    for (id, pulse) in pulses.iter().take(5) {
+    // Already sorted by API usually, but let's ensure it if needed or just take top 5
+    // The API returns history, usually newest first.
+    for pulse in pulses.iter().take(5) {
         println!(
-            "{}: {} keys on {}",
-            id,
-            pulse.keys.as_deref().unwrap_or("0"),
-            pulse.date.as_deref().unwrap_or("unknown date")
+            "Pulse #{}: {} keys on {}",
+            pulse.id,
+            pulse.keys.unwrap_or(0),
+            pulse.date
         );
     }
     Ok(())
@@ -88,14 +82,21 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
     let rows: Vec<Row> = app
         .recent_pulses
         .iter()
-        .map(|pulse| {
-            Row::new(vec![
-                pulse.date.as_deref().unwrap_or("Unknown").to_string(),
-                pulse.keys.as_deref().unwrap_or("0").to_string(),
-                pulse.clicks.as_deref().unwrap_or("0").to_string(),
-                pulse.download_mb.as_deref().unwrap_or("0").to_string(),
-                pulse.upload_mb.as_deref().unwrap_or("0").to_string(),
-            ])
+        .enumerate()
+        .map(|(i, pulse)| {
+            let row = Row::new(vec![
+                pulse.date.clone(),
+                pulse.keys.unwrap_or(0).to_string(),
+                pulse.clicks.unwrap_or(0).to_string(),
+                format!("{:.2}", pulse.download_mb.unwrap_or(0.0)),
+                format!("{:.2}", pulse.upload_mb.unwrap_or(0.0)),
+            ]);
+
+            if i % 2 == 1 {
+                row.style(Style::default().bg(Color::Rgb(30, 30, 30)))
+            } else {
+                row
+            }
         })
         .collect();
 

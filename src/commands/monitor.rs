@@ -15,6 +15,15 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
+// Constants
+// Gauge Scale Physics:
+// - Modern Burst (305 WPM Raw): ~25.4 KPS * 0.0024 J ≈ 0.061 W.
+// - Historical Sustained (Stella Pajunas, 1946): 216 WPM (~11.8 KPS effective) ≈ 0.028 W.
+// - Barbara Blackburn (Dvorak): 212 WPM (~11.6 KPS) ≈ 0.027 W.
+// We set the scale to 0.065 W (65mW) to perfectly frame the absolute human peak (305 WPM Raw).
+const MAX_GAUGE_POWER_WATTS: f64 = 0.065;
+const HEALTH_LIMIT_JOULES_PER_HOUR: f64 = 50.0; // Approx 70 WPM sustained
+
 inventory::submit! {
     TuiPage {
         title: "Kinetic",
@@ -271,7 +280,7 @@ fn render_tui(f: &mut Frame, app: &App, area: Rect) {
         } else if let Some(last) = app.kinetic_stats.last_update {
             format!("{}", last.format("%H:%M:%S"))
         } else {
-            format!("WAITING...")
+            "WAITING...".to_string()
         }
     } else {
         let error_msg = app
@@ -304,12 +313,17 @@ fn render_tui(f: &mut Frame, app: &App, area: Rect) {
     );
     f.render_widget(header, chunks[0]);
 
-    // 2. Power Gauge (Tachometer style)
-    let power = app.kinetic_stats.current_power_watts;
-    let max_power = 0.5; // 0.5 Watts is pretty high for typing
-    let ratio = (power / max_power).min(1.0);
+    // 2. Gauges Row (Power & Health)
+    let gauge_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(chunks[1]);
 
-    let gauge = Gauge::default()
+    // 2a. Power Gauge
+    let power = app.kinetic_stats.current_power_watts;
+    let ratio = (power / MAX_GAUGE_POWER_WATTS).min(1.0);
+
+    let power_gauge = Gauge::default()
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -323,7 +337,33 @@ fn render_tui(f: &mut Frame, app: &App, area: Rect) {
         )
         .ratio(ratio)
         .label(format!("{:.4} W", power));
-    f.render_widget(gauge, chunks[1]);
+    f.render_widget(power_gauge, gauge_chunks[0]);
+
+    // 2b. Health/Intensity Gauge
+    let hourly_joules = power * 3600.0;
+    let health_ratio = (hourly_joules / HEALTH_LIMIT_JOULES_PER_HOUR).min(1.0);
+
+    let health_color = if health_ratio > 0.9 {
+        Color::Red
+    } else if health_ratio > 0.7 {
+        Color::Yellow
+    } else {
+        Color::Green
+    };
+
+    let health_gauge = Gauge::default()
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Hourly Intensity (Fatigue Risk)"),
+        )
+        .gauge_style(Style::default().fg(health_color).bg(Color::Black))
+        .ratio(health_ratio)
+        .label(format!(
+            "{:.1} / {:.1} J/h",
+            hourly_joules, HEALTH_LIMIT_JOULES_PER_HOUR
+        ));
+    f.render_widget(health_gauge, gauge_chunks[1]);
 
     // 3. Stats & Graph
     let bottom_chunks = Layout::default()
@@ -364,7 +404,18 @@ fn render_tui(f: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD)
                 .fg(Color::Magenta),
         )]),
-        Line::from(vec![Span::raw("Work Threshold: 50.0 kJ/h")]),
+        Line::from(vec![
+            Span::raw("Hourly Rate: "),
+            Span::styled(
+                format!("{:.2} J/h", app.kinetic_stats.current_power_watts * 3600.0),
+                if app.kinetic_stats.current_power_watts * 3600.0 > HEALTH_LIMIT_JOULES_PER_HOUR {
+                    Style::default().fg(Color::Red)
+                } else {
+                    Style::default().fg(Color::Green)
+                },
+            ),
+            Span::raw(format!(" (Limit: {:.1} J/h)", HEALTH_LIMIT_JOULES_PER_HOUR)),
+        ]),
         Line::from(vec![Span::raw(format!(
             "Current Session: {:.4} J",
             app.kinetic_stats.accumulated_work_joules

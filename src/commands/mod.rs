@@ -8,6 +8,7 @@ use ratatui::layout::Rect;
 
 pub mod calorimetry;
 pub mod computers;
+pub mod heatmap;
 pub mod monitor;
 pub mod pulses;
 pub mod raw;

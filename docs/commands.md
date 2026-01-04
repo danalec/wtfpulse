@@ -80,6 +80,10 @@ Launches the interactive Terminal User Interface (dashboard). This mode provides
 *   **Dashboard Tab (Local Mode)**:
     *   Time period selection is disabled (real-time data only).
 
+*   **Heatmap Tab**:
+    *   **k**: Open **Layout Selection** popup.
+    *   **Popup Navigation**: Type to search, `Up`/`Down` to navigate, `Enter` to select.
+
 *   **Calorimetry Tab**:
     *   **p**: Cycle through keyboard switch profiles.
 
@@ -95,7 +99,7 @@ wtfpulse tui
 
 **Description:**
 Fetches and displays the current user's global statistics.
-*   **Web Mode:** Fetches from `api.whatpulse.org`. Includes Account Name, ID, Total Keys, Clicks, and Ranks.
+*   **Web Mode:** Fetches from `https://whatpulse.org/api/v1`. Includes Account Name, ID, Total Keys, Clicks, and Ranks.
 *   **Local Mode:** Fetches from `localhost:3490/v1/account-totals`. Includes Total Keys, Clicks, Download, Upload, and Uptime.
 
 **Usage:**
@@ -131,6 +135,24 @@ Lists all computers associated with your WhatPulse account.
 **Usage:**
 ```bash
 wtfpulse computers
+```
+
+---
+
+### `heatmap`
+**Source:** [`src/commands/heatmap/mod.rs`](../src/commands/heatmap/mod.rs)
+
+**Description:**
+Visualizes your keyboard usage intensity using a heatmap.
+*   **Source**: Always reads from the local WhatPulse client database (`whatpulse.db`), regardless of API mode.
+*   **Features**:
+    *   **Layout Support**: Supports multiple keyboard layouts (ANSI, ISO, etc.).
+    *   **Search**: Press `k` in the TUI to search and select your specific keyboard layout.
+    *   **Logarithmic Scale**: Uses a color gradient (Blue -> Green -> Red) based on logarithmic frequency to highlight usage patterns effectively.
+
+**Usage:**
+```bash
+wtfpulse heatmap
 ```
 
 ---

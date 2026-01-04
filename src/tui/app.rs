@@ -1,9 +1,15 @@
-use crate::client::{PulseResponse, UserResponse, WhatpulseClient};
+use crate::client::{ComputerResponse, PulseResponse, UserResponse, WhatpulseClient};
 use crate::commands::calorimetry::{EnergyStats, SwitchProfile, calculate_energy};
 use crate::commands::get_pages;
+use crate::commands::heatmap::layouts::KeyboardLayout;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use tokio::sync::mpsc;
+
+use log::info;
+use std::collections::HashMap;
+
+use std::cell::RefCell;
 
 #[derive(Debug, Clone, Default)]
 pub struct KineticStats {
@@ -96,9 +102,18 @@ pub enum Action {
     Key(KeyEvent),
     UserLoaded(Box<Result<UserResponse>>),
     PulsesLoaded(Result<Vec<PulseResponse>>),
+    ComputersLoaded(Result<Vec<ComputerResponse>>),
+    HeatmapLoaded(HashMap<String, u64>, String),
+    HeatmapError(String),
     WebSocketStatus(bool, Option<String>),
     RealtimeUpdate(RealtimeData),
     DebugInfo(String),
+    TogglePopup,
+    SelectLayout,
+    NextLayoutItem,
+    PrevLayoutItem,
+    PopupSearch(String),
+    PopupSelect,
 }
 
 use chrono::{Local, NaiveDate};
@@ -158,9 +173,11 @@ pub enum MonitorCommand {
 pub struct App {
     pub user_stats: Option<UserResponse>,
     pub recent_pulses: Vec<PulseResponse>,
+    pub computers: Vec<ComputerResponse>,
     pub energy_stats: Option<EnergyStats>,
     pub user_loading: bool,
     pub pulses_loading: bool,
+    pub computers_loading: bool,
     pub error: Option<String>,
     pub pulses_error: Option<String>,
     pub current_tab: usize,
@@ -173,6 +190,15 @@ pub struct App {
     pub date_picker: DatePickerState,
     pub kinetic_stats: KineticStats,
     pub unit_system: UnitSystem,
+    pub heatmap_data: HashMap<String, u64>,
+    pub keyboard_layout: KeyboardLayout,
+    // Heatmap Layout Popup State
+    pub show_layout_popup: bool,
+    pub layout_search_query: String,
+    pub layout_list_state: RefCell<ratatui::widgets::ListState>,
+    pub data_source: String,
+    pub heatmap_error: Option<String>,
+    pub should_quit: bool,
 }
 
 impl App {
@@ -180,9 +206,11 @@ impl App {
         Self {
             user_stats: None,
             recent_pulses: Vec::new(),
+            computers: Vec::new(),
             energy_stats: None,
             user_loading: true,
             pulses_loading: true,
+            computers_loading: true,
             error: None,
             pulses_error: None,
             current_tab: 0,
@@ -200,6 +228,14 @@ impl App {
             date_picker: DatePickerState::default(),
             kinetic_stats: KineticStats::default(),
             unit_system: UnitSystem::default(),
+            heatmap_data: HashMap::new(),
+            keyboard_layout: KeyboardLayout::Qwerty,
+            show_layout_popup: false,
+            layout_search_query: String::new(),
+            layout_list_state: RefCell::new(ratatui::widgets::ListState::default()),
+            data_source: String::from("API"),
+            heatmap_error: None,
+            should_quit: false,
         }
     }
 
@@ -224,9 +260,9 @@ impl App {
     }
 
     pub fn recalculate_energy(&mut self) {
-        if let Some(keys) = self.user_stats.as_ref().and_then(|u| u.keys.as_deref()) {
+        if let Some(keys) = self.user_stats.as_ref().and_then(|u| u.totals.keys) {
             let profile = self.current_profile();
-            self.energy_stats = calculate_energy(keys, Some(profile)).ok();
+            self.energy_stats = calculate_energy(&keys.to_string(), Some(profile)).ok();
         }
     }
 
@@ -269,7 +305,12 @@ impl App {
 
                 if !handled {
                     match key.code {
-                        KeyCode::Esc => return true,
+                        KeyCode::Esc | KeyCode::Char('q') => return true,
+                        KeyCode::Char('r') => {
+                            self.user_loading = true;
+                            self.pulses_loading = true;
+                            spawn_fetch(self.client.clone(), self.tx.clone());
+                        }
                         KeyCode::Tab | KeyCode::Right => {
                             self.current_tab = (self.current_tab + 1) % pages.len();
                         }
@@ -309,6 +350,31 @@ impl App {
                     }
                 }
             }
+            Action::ComputersLoaded(res) => {
+                self.computers_loading = false;
+                match res {
+                    Ok(comps) => {
+                        self.computers = comps;
+                    }
+                    Err(_e) => {
+                        // Maybe store computer error specifically?
+                        // For now just log or ignore? Or use global error?
+                        // Let's rely on individual tab error rendering if we add it.
+                    }
+                }
+            }
+            Action::HeatmapLoaded(map, source) => {
+                info!("Heatmap loaded with {} keys from {}", map.len(), source);
+                self.heatmap_data = map;
+                self.error = None;
+                self.heatmap_error = None;
+                self.data_source = source;
+            }
+            Action::HeatmapError(e) => {
+                self.error = Some(e.clone());
+                self.heatmap_error = Some(e);
+                self.data_source = "Error".to_string();
+            }
             Action::WebSocketStatus(connected, error) => {
                 self.kinetic_stats.is_connected = connected;
                 self.kinetic_stats.connection_error = error;
@@ -320,6 +386,54 @@ impl App {
             Action::DebugInfo(msg) => {
                 self.kinetic_stats.debug_info = Some(msg);
             }
+            Action::PopupSelect => {
+                if let Some(selected_index) = self.layout_list_state.borrow().selected() {
+                    let layouts = KeyboardLayout::all();
+                    // Need to filter again to find the correct item if searching
+                    let filtered: Vec<_> = layouts
+                        .into_iter()
+                        .filter(|l| {
+                            l.to_string()
+                                .to_lowercase()
+                                .contains(&self.layout_search_query.to_lowercase())
+                        })
+                        .collect();
+
+                    if let Some(layout) = filtered.get(selected_index) {
+                        self.keyboard_layout = *layout;
+                        self.show_layout_popup = false;
+                    }
+                }
+            }
+            Action::TogglePopup => {
+                self.show_layout_popup = !self.show_layout_popup;
+                // Reset search when opening
+                if self.show_layout_popup {
+                    self.layout_search_query.clear();
+                    self.layout_list_state.borrow_mut().select(Some(0));
+                }
+            }
+            Action::SelectLayout => {
+                // Already handled in PopupSelect, but kept for compatibility if needed
+            }
+            Action::NextLayoutItem => {
+                let mut state = self.layout_list_state.borrow_mut();
+                let selected = state.selected().unwrap_or(0);
+                // We don't know the filtered count here easily without recalculating
+                // For simplicity, just increment (the UI rendering handles bounds usually, but logic is better)
+                state.select(Some(selected + 1));
+            }
+            Action::PrevLayoutItem => {
+                let mut state = self.layout_list_state.borrow_mut();
+                let selected = state.selected().unwrap_or(0);
+                if selected > 0 {
+                    state.select(Some(selected - 1));
+                }
+            }
+            Action::PopupSearch(c) => {
+                self.layout_search_query.push_str(&c);
+                self.layout_list_state.borrow_mut().select(Some(0));
+            }
         }
         false
     }
@@ -329,17 +443,50 @@ pub fn spawn_fetch(client: WhatpulseClient, tx: mpsc::Sender<Action>) {
     let tx_user = tx.clone();
     let client_user = client.clone();
     tokio::spawn(async move {
-        let res = client_user.get_resource::<UserResponse>("user").await;
+        let res = client_user.get_user().await;
         let _ = tx_user.send(Action::UserLoaded(Box::new(res))).await;
     });
 
     let tx_pulses = tx.clone();
     let client_pulses = client.clone();
     tokio::spawn(async move {
-        let res = client_pulses
-            .get_resource::<Vec<PulseResponse>>("pulses")
-            .await;
+        let res = client_pulses.get_pulses().await;
         let _ = tx_pulses.send(Action::PulsesLoaded(res)).await;
+    });
+
+    let tx_computers = tx.clone();
+    let client_computers = client.clone();
+    tokio::spawn(async move {
+        let res = client_computers.get_computers().await;
+        let _ = tx_computers.send(Action::ComputersLoaded(res)).await;
+    });
+
+    // Initial Heatmap Fetch (All time)
+    let tx_heatmap = tx.clone();
+    let client_heatmap = client.clone();
+    tokio::spawn(async move {
+        match client_heatmap.get_heatmap("all").await {
+            Ok((map, source)) => {
+                let _ = tx_heatmap.send(Action::HeatmapLoaded(map, source)).await;
+            }
+            Err(e) => {
+                let _ = tx_heatmap.send(Action::HeatmapError(e.to_string())).await;
+            }
+        }
+    });
+}
+
+pub fn spawn_fetch_heatmap(client: WhatpulseClient, tx: mpsc::Sender<Action>, period: &str) {
+    let period = period.to_string();
+    tokio::spawn(async move {
+        match client.get_heatmap(&period).await {
+            Ok((map, source)) => {
+                let _ = tx.send(Action::HeatmapLoaded(map, source)).await;
+            }
+            Err(e) => {
+                let _ = tx.send(Action::HeatmapError(e.to_string())).await;
+            }
+        }
     });
 }
 

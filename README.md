@@ -10,7 +10,7 @@
 
 The goal of `wtfpulse` is to provide a type-safe, efficient, and easy-to-use command-line interface for WhatPulse. It bridges the gap between your local activity and your online profile:
 
-*   **Web API Mode**: Connects to `api.whatpulse.org` to fetch historical data, pulses, and global ranks. Requires an API Key.
+*   **Web API Mode**: Connects to `https://whatpulse.org/api/v1` to fetch historical data, pulses, and global ranks. Requires an API Key.
 *   **Local Client Mode**: Connects to your running WhatPulse client (`localhost:3489`) to display real-time keys/sec, unpulsed stats, and total counters. No API Key required.
 
 ### Target Audience
@@ -96,6 +96,7 @@ If no subcommand is provided, it defaults to the **TUI Dashboard**.
 - **Computers**: Enumerate all computers associated with the account.
 - **Calorimetry**: Calculate energy burned by typing (physics-based estimation). Works in both modes.
 - **Kinetic Monitor**: Real-time visualization of typing velocity, acceleration, and power.
+- **Heatmap**: Visualizes your keyboard usage heatmap using local data (always uses Local DB).
 - **Raw Access**: Query any API endpoint manually for debugging or new features.
 
 ### TUI Dashboard Features
@@ -105,10 +106,10 @@ The interactive dashboard (`wtfpulse tui` or just `wtfpulse`) offers a rich, ter
 #### Navigation & Global Controls
 | Key | Action |
 | :--- | :--- |
-| `Tab` / `Right Arrow` | Switch to the next tab (Dashboard, Computers, Pulses, Kinetic, etc.). |
+| `Tab` / `Right Arrow` | Switch to the next tab (Dashboard, Computers, Pulses, Heatmap, Kinetic). |
 | `Left Arrow` | Switch to the previous tab. |
 | `r` | **Refresh** data from the API. |
-| `q` | **Quit** the application immediately. |
+| `q` | **Quit** the application immediately (unless in a popup/menu). |
 | `Esc` | **Quit** the application (unless a popup is open). |
 
 #### Dashboard Tab (Web Mode)
@@ -121,8 +122,16 @@ You can filter your displayed stats (Keys, Clicks, Download, Upload) by specific
 | :--- | :--- |
 | `h` / `[` | Cycle time period **backward** (e.g., Today -> Custom -> All). |
 | `l` / `]` | Cycle time period **forward** (e.g., Today -> Yesterday -> Week). |
+| `k` | **Select Keyboard Layout** (Heatmap Tab only). |
 | `/` | **Quick Switch to Custom Range**: Automatically selects "Custom" and opens the Date Picker. |
 | `Enter` | Open the Date Picker (only when "Custom" period is already active). |
+
+#### Heatmap Tab
+Visualizes your keyboard usage using data from the local WhatPulse client database.
+*   **Source**: Always uses Local DB (API N/A).
+*   **Controls**:
+    *   **`k`**: Open the **Layout Selection** popup.
+    *   **Popup Controls**: Type to search, `Up`/`Down` to select, `Enter` to confirm, `Esc` to close.
 
 #### Dashboard Tab (Local Mode)
 When running without an API key, the dashboard simplifies to show real-time metrics:
@@ -221,6 +230,7 @@ This tool maps to the standard WhatPulse Web API and the Local Client API.
 | `user` | `/api/v1/user` (Web) or `/v1/account-totals` (Local) | Fetches User object (Account Name, Keys, Clicks). |
 | `pulses` | `/api/v1/pulses` (Web) | Fetches array of `PulseResponse` objects. (Web Only) |
 | `computers` | `/api/v1/computers` (Web) | Fetches array of `ComputerResponse` objects. (Web Only) |
+| `heatmap` | Local DB | Generates keyboard heatmap from local database. |
 
 ### Error Codes
 - **401 Unauthorized**: Your `WHATPULSE_API_KEY` is missing or invalid (Web Mode).
@@ -240,7 +250,7 @@ This tool maps to the standard WhatPulse Web API and the Local Client API.
 
 2.  **"request failed: GET ..."**
     - **Cause**: Network connectivity issue or DNS failure.
-    - **Solution**: Check your internet connection and ensure `api.whatpulse.org` is reachable.
+    - **Solution**: Check your internet connection and ensure `whatpulse.org` is reachable.
 
 3.  **"No computers available in Local Mode"**
     - **Cause**: Local Mode does not support per-computer statistics.

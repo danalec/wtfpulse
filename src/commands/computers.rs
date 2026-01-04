@@ -1,4 +1,4 @@
-use crate::client::{UserResponse, WhatpulseClient};
+use crate::client::WhatpulseClient;
 use crate::commands::TuiPage;
 use crate::tui::app::App;
 use anyhow::Result;
@@ -26,16 +26,13 @@ fn handle_key(_app: &mut App, _key: KeyEvent) -> bool {
 
 pub async fn execute(client: &WhatpulseClient) -> Result<()> {
     // Computer stats are nested inside the User response
-    let user = client.get_resource::<UserResponse>("user").await?;
-    if let Some(computers) = user.computers {
+    let computers = client.get_computers().await?;
+    if !computers.is_empty() {
         println!("Found {} computers:", computers.len());
-        for (_, comp) in computers {
+        for comp in computers {
             println!(
                 "{} ({}): {} keys, {} clicks",
-                comp.name.as_deref().unwrap_or("unknown"),
-                comp.id.as_deref().unwrap_or("unknown"),
-                comp.keys.as_deref().unwrap_or("0"),
-                comp.clicks.as_deref().unwrap_or("0")
+                comp.name, comp.id, comp.totals.keys, comp.totals.clicks
             );
         }
     } else {
@@ -58,87 +55,64 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    if app.user_loading && app.user_stats.is_none() {
+    if app.computers_loading && app.computers.is_empty() {
         f.render_widget(Paragraph::new("Loading..."), inner_area);
         return;
     }
 
-    if let Some(user) = &app.user_stats {
-        if let Some(computers) = &user.computers {
-            let mut rows = Vec::new();
+    if !app.computers.is_empty() {
+        let mut rows = Vec::new();
 
-            // Sort computers by keys (descending)
-            let mut comps: Vec<_> = computers.values().collect();
-            comps.sort_by(|a, b| {
-                let keys_a = a
-                    .keys
-                    .as_deref()
-                    .unwrap_or("0")
-                    .replace(',', "")
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                let keys_b = b
-                    .keys
-                    .as_deref()
-                    .unwrap_or("0")
-                    .replace(',', "")
-                    .parse::<u64>()
-                    .unwrap_or(0);
-                keys_b.cmp(&keys_a)
-            });
+        // Sort computers by keys (descending)
+        let mut comps: Vec<_> = app.computers.iter().collect();
+        comps.sort_by(|a, b| b.totals.keys.cmp(&a.totals.keys));
 
-            for comp in comps {
-                rows.push(Row::new(vec![
-                    comp.name.as_deref().unwrap_or("Unknown").to_string(),
-                    comp.os.as_deref().unwrap_or("-").to_string(),
-                    comp.keys.as_deref().unwrap_or("0").to_string(),
-                    comp.clicks.as_deref().unwrap_or("0").to_string(),
-                ]));
-            }
-
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Percentage(40),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                ],
-            )
-            .header(
-                Row::new(vec!["Name", "OS", "Keys", "Clicks"])
-                    .style(Style::default().fg(Color::Yellow)),
-            )
-            .block(Block::default());
-
-            f.render_widget(table, inner_area);
-        } else {
-            if app.client.is_local() {
-                let text = vec![
-                    Line::from(Span::styled(
-                        "No computers available in Local Mode.",
-                        Style::default().fg(Color::Yellow),
-                    )),
-                    Line::from("Reason: No WHATPULSE_API_KEY detected."),
-                    Line::from("To see per-computer stats, please provide a valid API key."),
-                ];
-                f.render_widget(Paragraph::new(text), inner_area);
-            } else {
-                f.render_widget(Paragraph::new("No computers found."), inner_area);
-            }
+        for comp in comps {
+            rows.push(Row::new(vec![
+                comp.name.clone(),
+                comp.os.clone(),
+                comp.totals.keys.to_string(),
+                comp.totals.clicks.to_string(),
+            ]));
         }
+
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Percentage(40),
+                Constraint::Percentage(20),
+                Constraint::Percentage(20),
+                Constraint::Percentage(20),
+            ],
+        )
+        .header(
+            Row::new(vec!["Name", "OS", "Keys", "Clicks"])
+                .style(Style::default().fg(Color::Yellow)),
+        )
+        .block(Block::default());
+
+        f.render_widget(table, inner_area);
+    } else if app.client.is_local() {
+        let text = vec![
+            Line::from(Span::styled(
+                "No computers available in Local Mode.",
+                Style::default().fg(Color::Yellow),
+            )),
+            Line::from("Reason: No WHATPULSE_API_KEY detected."),
+            Line::from("To see per-computer stats, please provide a valid API key."),
+        ];
+        f.render_widget(Paragraph::new(text), inner_area);
     } else {
-        f.render_widget(Paragraph::new("No data available."), inner_area);
+        f.render_widget(Paragraph::new("No computers found."), inner_area);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::ComputerResponse;
+    use crate::client::{ComputerResponse, ComputerTotals};
     use ratatui::Terminal;
     use ratatui::backend::{Backend, TestBackend};
-    use std::collections::HashMap;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -152,7 +126,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
 
         // Case 1: Loading
-        app.user_loading = true;
+        app.computers_loading = true;
         terminal
             .draw(|f| {
                 render_tui(f, &app, f.area());
@@ -161,36 +135,28 @@ mod tests {
         // Assertions would go here
 
         // Case 2: Data loaded
-        let mut computers = HashMap::new();
-        computers.insert(
-            "1".to_string(),
-            ComputerResponse {
-                id: Some("1".to_string()),
-                name: Some("Test PC".to_string()),
-                os: Some("Windows".to_string()),
-                keys: Some("1000".to_string()),
-                clicks: Some("500".to_string()),
+        let computer = ComputerResponse {
+            id: 1,
+            name: "Test PC".to_string(),
+            client_version: "1.0.0".to_string(),
+            os: "Windows".to_string(),
+            is_archived: false,
+            totals: ComputerTotals {
+                keys: 1000,
+                clicks: 500,
                 download_mb: None,
                 upload_mb: None,
-                extra: HashMap::new(),
+                uptime_seconds: None,
+                scrolls: None,
+                distance_miles: None,
             },
-        );
+            pulses: None,
+            last_pulse_date: None,
+            hardware: None,
+        };
 
-        app.user_loading = false;
-        app.user_stats = Some(UserResponse {
-            id: Some("12345".to_string()),
-            account_name: Some("TestUser".to_string()),
-            country: Some("TestLand".to_string()),
-            date_joined: Some("2021-01-01".to_string()),
-            keys: Some("1000".to_string()),
-            clicks: Some("500".to_string()),
-            download_mb: None,
-            upload_mb: None,
-            uptime_seconds: None,
-            computers: Some(computers),
-            ranks: None,
-            extra: HashMap::new(),
-        });
+        app.computers_loading = false;
+        app.computers = vec![computer];
 
         terminal
             .draw(|f| {

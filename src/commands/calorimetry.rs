@@ -1,4 +1,4 @@
-use crate::client::{UserResponse, WhatpulseClient};
+use crate::client::WhatpulseClient;
 use anyhow::{Context, Result};
 use uom::si::energy::{calorie, joule, kilocalorie};
 use uom::si::f64::Energy;
@@ -130,13 +130,13 @@ pub async fn execute(client: &WhatpulseClient) -> Result<()> {
 
     // Fetch user stats to get total keys
     let user = client
-        .get_resource::<UserResponse>("user")
+        .get_user()
         .await
         .context("Failed to fetch user data")?;
 
-    let keys_str = user.keys.as_deref().unwrap_or("0");
+    let keys_str = user.totals.keys.unwrap_or(0).to_string();
     // Default to Cherry MX Red for CLI for now, could add args later
-    let stats = calculate_energy(keys_str, None)?;
+    let stats = calculate_energy(&keys_str, None)?;
 
     // Formatting output
     println!("\nEnergy Expenditure Report:");

@@ -127,5 +127,5 @@ cargo run -- tui
 
 - **Keep it focused**: Each command file should handle one specific task or domain.
 - **Use `anyhow`**: Return `anyhow::Result<()>` for simplified error handling.
-- **Reuse Client Methods**: Use `client.get_resource::<T>("resource")` or `client.get_json::<T>("path")` to fetch data.
+- **Reuse Client Methods**: Use typed methods like `client.get_user()` or generic `client.get_json::<T>("path")` to fetch data.
 - **Unit Tests**: Add tests within your command module to verify logic and TUI rendering.

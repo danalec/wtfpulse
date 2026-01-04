@@ -1,8 +1,8 @@
-use crate::client::{PulseResponse, UserResponse, WhatpulseClient};
+use crate::client::{PulseResponse, WhatpulseClient};
 use crate::commands::TuiPage;
 use crate::tui::app::{App, SelectionStep, TimePeriod};
 use anyhow::Result;
-use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeZone, Utc};
+use chrono::{Datelike, Days, Local, Months, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -66,7 +66,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Enter => {
             if app.dashboard_period == TimePeriod::Custom {
                 app.date_picker.open = true;
-                // Reset picker state
+
                 app.date_picker.selection_step = SelectionStep::Start;
                 if app.date_picker.start_date.is_none() {
                     app.date_picker.current_selection = chrono::Local::now().date_naive();
@@ -129,49 +129,42 @@ fn handle_date_picker_key(app: &mut App, key: KeyEvent) {
                 .checked_add_months(Months::new(1))
                 .unwrap_or(app.date_picker.current_selection);
         }
-        KeyCode::Enter => {
-            match app.date_picker.selection_step {
-                SelectionStep::Start => {
-                    app.date_picker.start_date = Some(app.date_picker.current_selection);
-                    app.date_picker.selection_step = SelectionStep::End;
-                    // Auto move cursor to next day for convenience
-                    app.date_picker.current_selection = app
-                        .date_picker
-                        .current_selection
-                        .checked_add_days(Days::new(1))
-                        .unwrap_or(app.date_picker.current_selection);
-                }
-                SelectionStep::End => {
-                    let end = app.date_picker.current_selection;
-                    if let Some(start) = app.date_picker.start_date {
-                        if end >= start {
-                            app.date_picker.end_date = Some(end);
-                            app.date_picker.open = false;
-                        } else {
-                            // Invalid range, maybe reset or swap? Let's just swap for UX
-                            app.date_picker.start_date = Some(end);
-                            app.date_picker.end_date = Some(start);
-                            app.date_picker.open = false;
-                        }
+        KeyCode::Enter => match app.date_picker.selection_step {
+            SelectionStep::Start => {
+                app.date_picker.start_date = Some(app.date_picker.current_selection);
+                app.date_picker.selection_step = SelectionStep::End;
+
+                app.date_picker.current_selection = app
+                    .date_picker
+                    .current_selection
+                    .checked_add_days(Days::new(1))
+                    .unwrap_or(app.date_picker.current_selection);
+            }
+            SelectionStep::End => {
+                let end = app.date_picker.current_selection;
+                if let Some(start) = app.date_picker.start_date {
+                    if end >= start {
+                        app.date_picker.end_date = Some(end);
+                        app.date_picker.open = false;
                     } else {
-                        // Should not happen if step is End
                         app.date_picker.start_date = Some(end);
-                        app.date_picker.selection_step = SelectionStep::End;
+                        app.date_picker.end_date = Some(start);
+                        app.date_picker.open = false;
                     }
+                } else {
+                    app.date_picker.start_date = Some(end);
+                    app.date_picker.selection_step = SelectionStep::End;
                 }
             }
-        }
+        },
         _ => {}
     }
 }
 
 pub async fn execute(client: &WhatpulseClient) -> Result<()> {
-    let user = client.get_resource::<UserResponse>("user").await?;
+    let user = client.get_user().await?;
     // CLI output remains simple
-    println!(
-        "User: {}",
-        user.account_name.as_deref().unwrap_or("Unknown")
-    );
+    println!("User: {}", user.username);
     Ok(())
 }
 
@@ -185,14 +178,17 @@ fn filter_pulses<'a>(
     pulses
         .iter()
         .filter(|p| {
-            let ts_str = p.timestamp.as_deref().unwrap_or("0");
-            let ts = ts_str.parse::<i64>().unwrap_or(0);
-
-            let dt_utc = Utc
-                .timestamp_opt(ts, 0)
-                .single()
-                .unwrap_or_else(|| Utc.timestamp_opt(0, 0).unwrap());
-            let date = dt_utc.with_timezone(&Local).date_naive();
+            // Try to parse ISO string first, fallback if needed
+            // Assuming format like "2023-01-01T12:00:00" or similar
+            let date = if let Ok(dt) =
+                chrono::NaiveDateTime::parse_from_str(&p.date, "%Y-%m-%d %H:%M:%S")
+            {
+                dt.date()
+            } else if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&p.date) {
+                dt.date_naive()
+            } else {
+                NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()
+            };
 
             match period {
                 TimePeriod::Today => date == now,
@@ -323,8 +319,11 @@ fn render_user_stats(f: &mut Frame, app: &App, area: Rect) {
     }
 
     if let Some(user) = &app.user_stats {
-        let name = user.account_name.as_deref().unwrap_or("Unknown");
-        let country = user.country.as_deref().unwrap_or("Unknown");
+        let name = &user.username;
+        let country = user
+            .country_id
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "Unknown".to_string());
         let joined = user.date_joined.as_deref().unwrap_or("Unknown");
         let period_label = if app.client.is_local() {
             "Total (Local)"
@@ -350,90 +349,40 @@ fn render_user_stats(f: &mut Frame, app: &App, area: Rect) {
 
         if app.client.is_local() || app.dashboard_period == TimePeriod::All {
             text.push_str(&format!(
-                "\nTotal Keys:    {}\nTotal Clicks:  {}\nTotal Down:    {} MB\nTotal Up:      {} MB",
-                user.keys.as_deref().unwrap_or("0"),
-                user.clicks.as_deref().unwrap_or("0"),
-                user.download_mb.as_deref().unwrap_or("0"),
-                user.upload_mb.as_deref().unwrap_or("0"),
+                "\nTotal Keys:    {}\nTotal Clicks:  {}\nTotal Down:    {:.2} MB\nTotal Up:      {:.2} MB",
+                user.totals.keys.unwrap_or(0),
+                user.totals.clicks.unwrap_or(0),
+                user.totals.download_mb.unwrap_or(0.0),
+                user.totals.upload_mb.unwrap_or(0.0),
             ));
 
             if app.client.is_local() {
                 text.push_str("\n\n(Local Mode - Pulse History Unavailable)");
             }
         } else {
-            let p_keys: u64 = filtered_pulses
+            let p_keys: u64 = filtered_pulses.iter().map(|p| p.keys.unwrap_or(0)).sum();
+            let p_clicks: u64 = filtered_pulses.iter().map(|p| p.clicks.unwrap_or(0)).sum();
+            let p_down: f64 = filtered_pulses
                 .iter()
-                .map(|p| {
-                    p.keys
-                        .as_deref()
-                        .unwrap_or("0")
-                        .replace(',', "")
-                        .parse::<u64>()
-                        .unwrap_or(0)
-                })
+                .map(|p| p.download_mb.unwrap_or(0.0))
                 .sum();
-            let p_clicks: u64 = filtered_pulses
+            let p_up: f64 = filtered_pulses
                 .iter()
-                .map(|p| {
-                    p.clicks
-                        .as_deref()
-                        .unwrap_or("0")
-                        .replace(',', "")
-                        .parse::<u64>()
-                        .unwrap_or(0)
-                })
-                .sum();
-            let p_down: u64 = filtered_pulses
-                .iter()
-                .map(|p| {
-                    p.download_mb
-                        .as_deref()
-                        .unwrap_or("0")
-                        .replace(',', "")
-                        .parse::<u64>()
-                        .unwrap_or(0)
-                })
-                .sum();
-            let p_up: u64 = filtered_pulses
-                .iter()
-                .map(|p| {
-                    p.upload_mb
-                        .as_deref()
-                        .unwrap_or("0")
-                        .replace(',', "")
-                        .parse::<u64>()
-                        .unwrap_or(0)
-                })
+                .map(|p| p.upload_mb.unwrap_or(0.0))
                 .sum();
 
             text.push_str(&format!(
-                "\nPeriod Keys:   {}\nPeriod Clicks: {}\nPeriod Down:   {} MB\nPeriod Up:     {} MB",
+                "\nTotal Keys:    {}\nTotal Clicks:  {}\nTotal Down:    {:.2} MB\nTotal Up:      {:.2} MB",
                 p_keys, p_clicks, p_down, p_up
             ));
-            text.push_str("\n(Based on available pulses)");
         }
 
         if let Some(ranks) = &user.ranks {
             text.push_str("\n\nRanks:\n");
-            text.push_str(&format!(
-                "  Keys: {}\n",
-                ranks.get("Keys").and_then(|v| v.as_str()).unwrap_or("-")
-            ));
-            text.push_str(&format!(
-                "  Clicks: {}\n",
-                ranks.get("Clicks").and_then(|v| v.as_str()).unwrap_or("-")
-            ));
-            text.push_str(&format!(
-                "  Download: {}\n",
-                ranks
-                    .get("Download")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("-")
-            ));
-            text.push_str(&format!(
-                "  Upload: {}",
-                ranks.get("Upload").and_then(|v| v.as_str()).unwrap_or("-")
-            ));
+            text.push_str(&format!("  Keys: {}\n", ranks.keys));
+            text.push_str(&format!("  Clicks: {}\n", ranks.clicks));
+            text.push_str(&format!("  Download: {}\n", ranks.download));
+            text.push_str(&format!("  Upload: {}", ranks.upload));
         }
 
         if app.dashboard_period == TimePeriod::Custom {
@@ -482,22 +431,19 @@ fn render_pulse_graph(f: &mut Frame, app: &App, area: Rect) {
                         .fg(Color::Cyan),
                 )),
                 Line::from(""),
-                Line::from(format!("Keys:    {}", user.keys.as_deref().unwrap_or("0"))),
+                Line::from(format!("Keys:    {}", user.totals.keys.unwrap_or(0))),
+                Line::from(format!("Clicks:  {}", user.totals.clicks.unwrap_or(0))),
                 Line::from(format!(
-                    "Clicks:  {}",
-                    user.clicks.as_deref().unwrap_or("0")
+                    "Down:    {:.2} MB",
+                    user.totals.download_mb.unwrap_or(0.0)
                 )),
                 Line::from(format!(
-                    "Down:    {} MB",
-                    user.download_mb.as_deref().unwrap_or("0")
-                )),
-                Line::from(format!(
-                    "Up:      {} MB",
-                    user.upload_mb.as_deref().unwrap_or("0")
+                    "Up:      {:.2} MB",
+                    user.totals.upload_mb.unwrap_or(0.0)
                 )),
                 Line::from(format!(
                     "Uptime:  {}",
-                    user.uptime_seconds.as_deref().unwrap_or("0")
+                    user.totals.uptime_seconds.unwrap_or(0)
                 )),
             ];
             f.render_widget(Paragraph::new(total_text), chunks[0]);
@@ -568,16 +514,7 @@ fn render_pulse_graph(f: &mut Frame, app: &App, area: Rect) {
     let data_len = filtered_pulses.len().min(max_bars);
     let data_iter = filtered_pulses.iter().take(data_len).rev();
 
-    let values: Vec<u64> = data_iter
-        .map(|p| {
-            p.keys
-                .as_deref()
-                .unwrap_or("0")
-                .replace(',', "")
-                .parse::<u64>()
-                .unwrap_or(0)
-        })
-        .collect();
+    let values: Vec<u64> = data_iter.map(|p| p.keys.unwrap_or(0)).collect();
 
     let sparkline = Sparkline::default()
         .block(Block::default())
@@ -738,9 +675,9 @@ fn centered_fixed_area(width: u16, height: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::{UserResponse, UserTotals};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
-    use std::collections::HashMap;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -766,18 +703,32 @@ mod tests {
         app.user_loading = false;
         app.pulses_loading = false;
         app.user_stats = Some(UserResponse {
-            id: Some("12345".to_string()),
-            account_name: Some("TestUser".to_string()),
-            country: Some("TestLand".to_string()),
+            id: 12345,
+            username: "TestUser".to_string(),
+            country_id: Some(1),
             date_joined: Some("2021-01-01".to_string()),
-            keys: Some("1000".to_string()),
-            clicks: Some("500".to_string()),
-            download_mb: None,
-            upload_mb: None,
-            uptime_seconds: None,
-            computers: None,
+            first_pulse_date: None,
+            last_pulse_date: None,
+            pulses: 0,
+            team_id: None,
+            team_is_manager: false,
+            is_premium: false,
+            referrals: 0,
+            last_referral_date: None,
+            avatar: None,
+            totals: UserTotals {
+                keys: Some(1000),
+                clicks: Some(500),
+                download_mb: Some(0.0),
+                upload_mb: Some(0.0),
+                uptime_seconds: Some(0),
+                scrolls: 0,
+                distance_miles: Some(0.0),
+            },
             ranks: None,
-            extra: HashMap::new(),
+            include_in_rankings: false,
+            distance_system: "metric".to_string(),
+            last_pulse: None,
         });
 
         terminal
