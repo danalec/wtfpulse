@@ -1,10 +1,10 @@
-use ratatui::{
-    layout::{Constraint, Direction, Layout},
-    Frame,
-};
+use crate::commands::get_pages;
 use crate::tui::app::App;
 use crate::tui::tabs;
-use crate::commands::get_pages;
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout},
+};
 
 pub fn draw(f: &mut Frame, app: &App) {
     let chunks = Layout::default()

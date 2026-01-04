@@ -1,21 +1,21 @@
+use crate::client::{UserResponse, WhatpulseClient};
 use anyhow::{Context, Result};
-use crate::client::{WhatpulseClient, UserResponse};
-use uom::si::energy::{joule, calorie, kilocalorie};
+use uom::si::energy::{calorie, joule, kilocalorie};
 use uom::si::f64::Energy;
 use uom::si::force::newton;
 use uom::si::length::meter;
 
 // TUI Imports
+use crate::commands::TuiPage;
+use crate::tui::app::App;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
-use crate::tui::app::App;
-use crate::commands::TuiPage;
-use crossterm::event::{KeyCode, KeyEvent};
 
 inventory::submit! {
     TuiPage {
@@ -72,7 +72,7 @@ impl SwitchProfile {
     pub fn cherry_mx_brown() -> Self {
         Self::new("Cherry MX Brown", 55.0, 4.0) // ~45g actuation, 55g peak
     }
-    
+
     pub fn membrane() -> Self {
         Self::new("Generic Membrane", 55.0, 3.5) // Approx
     }
@@ -101,10 +101,10 @@ pub fn calculate_energy(keys_str: &str, profile: Option<&SwitchProfile>) -> Resu
     let force = uom::si::f64::Force::new::<newton>(profile.force_newtons);
     let distance = uom::si::f64::Length::new::<meter>(profile.distance_meters);
     let work_per_keystroke: Energy = force * distance;
-    
+
     // Total work
     let total_work = work_per_keystroke * keys;
-    
+
     // Convert to calories (small calories)
     let total_calories = total_work.get::<calorie>();
     // Convert to kilocalories (food calories)
@@ -127,9 +127,10 @@ pub fn calculate_energy(keys_str: &str, profile: Option<&SwitchProfile>) -> Resu
 
 pub async fn execute(client: &WhatpulseClient) -> Result<()> {
     println!("Fetching latest pulse data...");
-    
+
     // Fetch user stats to get total keys
-    let user = client.get_resource::<UserResponse>("user")
+    let user = client
+        .get_resource::<UserResponse>("user")
         .await
         .context("Failed to fetch user data")?;
 
@@ -147,9 +148,12 @@ pub async fn execute(client: &WhatpulseClient) -> Result<()> {
     println!("──────────────────────────");
     println!("Fun Comparisons:");
     println!("• Equivalent to {:.4} M&Ms", stats.m_and_ms);
-    
+
     if stats.running_seconds >= 60.0 {
-        println!("• Like running for {:.1} minutes", stats.running_seconds / 60.0);
+        println!(
+            "• Like running for {:.1} minutes",
+            stats.running_seconds / 60.0
+        );
     } else {
         println!("• Like running for {:.0} seconds", stats.running_seconds);
     }
@@ -161,18 +165,20 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Calorimetry ");
-    
+
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
     if app.user_loading && app.energy_stats.is_none() {
-        f.render_widget(Paragraph::new("Loading...").style(Style::default().fg(Color::Yellow)), inner_area);
+        f.render_widget(
+            Paragraph::new("Loading...").style(Style::default().fg(Color::Yellow)),
+            inner_area,
+        );
         return;
     }
 
     if let Some(err) = &app.error {
-        let p = Paragraph::new(format!("Error: {}", err))
-            .style(Style::default().fg(Color::Red));
+        let p = Paragraph::new(format!("Error: {}", err)).style(Style::default().fg(Color::Red));
         f.render_widget(p, inner_area);
         return;
     }
@@ -183,7 +189,10 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled("Switch Profile: ", Style::default().fg(Color::Cyan)),
                 Span::raw(&profile.name),
-                Span::styled(" (Press 'p' to cycle)", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    " (Press 'p' to cycle)",
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -192,10 +201,16 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
             ]),
             Line::from(vec![
                 Span::styled("Calories Burned: ", Style::default().fg(Color::Blue)),
-                Span::raw(format!("{:.2} cal / {:.4} kcal", stats.calories, stats.kcal)),
+                Span::raw(format!(
+                    "{:.2} cal / {:.4} kcal",
+                    stats.calories, stats.kcal
+                )),
             ]),
             Line::from(""),
-            Line::from(Span::styled("Fun Comparisons:", Style::default().add_modifier(Modifier::UNDERLINED))),
+            Line::from(Span::styled(
+                "Fun Comparisons:",
+                Style::default().add_modifier(Modifier::UNDERLINED),
+            )),
             Line::from(format!("• {:.4} M&Ms", stats.m_and_ms)),
             Line::from(if stats.running_seconds >= 60.0 {
                 format!("• Running for {:.1} minutes", stats.running_seconds / 60.0)
@@ -203,7 +218,7 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
                 format!("• Running for {:.0} seconds", stats.running_seconds)
             }),
         ];
-        
+
         f.render_widget(Paragraph::new(text), inner_area);
     } else {
         f.render_widget(
@@ -217,16 +232,16 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::backend::{Backend, TestBackend};
-    use ratatui::Terminal;
-    use tokio::sync::mpsc;
     use crate::tui::app::App;
+    use ratatui::Terminal;
+    use ratatui::backend::{Backend, TestBackend};
+    use tokio::sync::mpsc;
 
     #[test]
     fn test_energy_calculation_default() {
         let keys = "1000";
         let stats = calculate_energy(keys, None).unwrap();
-        
+
         // F = 0.441 N (45g), d = 0.004 m
         // W = 0.441 * 0.004 * 1000 = 1.764 J
         assert!((stats.work_joules - 1.765).abs() < 0.01);
@@ -237,7 +252,7 @@ mod tests {
         let keys = "1000";
         let profile = SwitchProfile::cherry_mx_blue();
         let stats = calculate_energy(keys, Some(&profile)).unwrap();
-        
+
         // F = 0.588 N (60g), d = 0.004 m
         // W = 0.588 * 0.004 * 1000 = 2.352 J
         assert!((stats.work_joules - 2.353).abs() < 0.01);
@@ -266,17 +281,20 @@ mod tests {
         // Case 1: Loading
         app.user_loading = true;
         app.energy_stats = None;
-        terminal.draw(|f| {
-            render_tui(f, &app, f.area());
-        }).unwrap();
-        
+        terminal
+            .draw(|f| {
+                render_tui(f, &app, f.area());
+            })
+            .unwrap();
+
         let buffer = terminal.backend().buffer();
         // Check for "Loading..." text
         let mut found_loading = false;
         for cell in buffer.content.iter() {
-            if cell.symbol() == "L" { // Simple check, real check would be more complex
-                 found_loading = true;
-                 break;
+            if cell.symbol() == "L" {
+                // Simple check, real check would be more complex
+                found_loading = true;
+                break;
             }
         }
         // Actually TestBackend has better assertions, but let's just ensure it drew something
@@ -285,11 +303,16 @@ mod tests {
         // Case 2: Data loaded
         app.user_loading = false;
         app.energy_stats = Some(calculate_energy("1000", None).unwrap());
-        terminal.draw(|f| {
-            render_tui(f, &app, f.area());
-        }).unwrap();
-        
+        terminal
+            .draw(|f| {
+                render_tui(f, &app, f.area());
+            })
+            .unwrap();
+
         // Just verify it doesn't panic and draws
-        assert_eq!(terminal.backend().size().unwrap(), ratatui::layout::Size::new(20, 10));
+        assert_eq!(
+            terminal.backend().size().unwrap(),
+            ratatui::layout::Size::new(20, 10)
+        );
     }
 }

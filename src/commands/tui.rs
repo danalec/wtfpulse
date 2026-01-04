@@ -1,14 +1,15 @@
 use anyhow::Result;
-use std::io;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
+use std::io;
 use tokio::sync::mpsc;
 
 use crate::client::WhatpulseClient;
+use crate::commands::monitor::spawn_monitor_task;
 use crate::tui::{
     app::{App, spawn_fetch},
     event::start_event_listener,
@@ -33,7 +34,16 @@ pub async fn execute(client: &WhatpulseClient) -> Result<()> {
     // 4. Initial Data Fetch
     spawn_fetch(client.clone(), tx.clone());
 
-    // 5. Main Loop
+    // 5. Spawn Monitor Task (Real-time)
+    let tx_monitor = tx.clone();
+    let (monitor_tx, monitor_rx) = mpsc::channel(10);
+    app.set_monitor_tx(monitor_tx);
+
+    tokio::spawn(async move {
+        spawn_monitor_task(tx_monitor, monitor_rx).await;
+    });
+
+    // 6. Main Loop
     loop {
         terminal.draw(|f| draw(f, &app))?;
 

@@ -1,14 +1,15 @@
+use crate::client::{UserResponse, WhatpulseClient};
+use crate::commands::TuiPage;
+use crate::tui::app::App;
 use anyhow::Result;
-use crate::client::{WhatpulseClient, UserResponse};
+use crossterm::event::KeyEvent;
 use ratatui::{
+    Frame,
     layout::{Constraint, Rect},
     style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Row, Table},
-    Frame,
 };
-use crate::tui::app::App;
-use crate::commands::TuiPage;
-use crossterm::event::KeyEvent;
 
 inventory::submit! {
     TuiPage {
@@ -29,7 +30,8 @@ pub async fn execute(client: &WhatpulseClient) -> Result<()> {
     if let Some(computers) = user.computers {
         println!("Found {} computers:", computers.len());
         for (_, comp) in computers {
-            println!("{} ({}): {} keys, {} clicks", 
+            println!(
+                "{} ({}): {} keys, {} clicks",
                 comp.name.as_deref().unwrap_or("unknown"),
                 comp.id.as_deref().unwrap_or("unknown"),
                 comp.keys.as_deref().unwrap_or("0"),
@@ -43,15 +45,16 @@ pub async fn execute(client: &WhatpulseClient) -> Result<()> {
 }
 
 pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Computers ");
+    let block = Block::default().borders(Borders::ALL).title(" Computers ");
 
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
     if let Some(err) = &app.error {
-        f.render_widget(Paragraph::new(format!("Error: {}", err)).style(Style::default().fg(Color::Red)), inner_area);
+        f.render_widget(
+            Paragraph::new(format!("Error: {}", err)).style(Style::default().fg(Color::Red)),
+            inner_area,
+        );
         return;
     }
 
@@ -63,12 +66,24 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
     if let Some(user) = &app.user_stats {
         if let Some(computers) = &user.computers {
             let mut rows = Vec::new();
-            
+
             // Sort computers by keys (descending)
             let mut comps: Vec<_> = computers.values().collect();
             comps.sort_by(|a, b| {
-                let keys_a = a.keys.as_deref().unwrap_or("0").replace(',', "").parse::<u64>().unwrap_or(0);
-                let keys_b = b.keys.as_deref().unwrap_or("0").replace(',', "").parse::<u64>().unwrap_or(0);
+                let keys_a = a
+                    .keys
+                    .as_deref()
+                    .unwrap_or("0")
+                    .replace(',', "")
+                    .parse::<u64>()
+                    .unwrap_or(0);
+                let keys_b = b
+                    .keys
+                    .as_deref()
+                    .unwrap_or("0")
+                    .replace(',', "")
+                    .parse::<u64>()
+                    .unwrap_or(0);
                 keys_b.cmp(&keys_a)
             });
 
@@ -88,14 +103,29 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
                     Constraint::Percentage(20),
                     Constraint::Percentage(20),
                     Constraint::Percentage(20),
-                ]
+                ],
             )
-            .header(Row::new(vec!["Name", "OS", "Keys", "Clicks"]).style(Style::default().fg(Color::Yellow)))
+            .header(
+                Row::new(vec!["Name", "OS", "Keys", "Clicks"])
+                    .style(Style::default().fg(Color::Yellow)),
+            )
             .block(Block::default());
 
             f.render_widget(table, inner_area);
         } else {
-            f.render_widget(Paragraph::new("No computers found."), inner_area);
+            if app.client.is_local() {
+                let text = vec![
+                    Line::from(Span::styled(
+                        "No computers available in Local Mode.",
+                        Style::default().fg(Color::Yellow),
+                    )),
+                    Line::from("Reason: No WHATPULSE_API_KEY detected."),
+                    Line::from("To see per-computer stats, please provide a valid API key."),
+                ];
+                f.render_widget(Paragraph::new(text), inner_area);
+            } else {
+                f.render_widget(Paragraph::new("No computers found."), inner_area);
+            }
         }
     } else {
         f.render_widget(Paragraph::new("No data available."), inner_area);
@@ -105,11 +135,11 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::backend::{Backend, TestBackend};
-    use ratatui::Terminal;
-    use tokio::sync::mpsc;
     use crate::client::ComputerResponse;
+    use ratatui::Terminal;
+    use ratatui::backend::{Backend, TestBackend};
     use std::collections::HashMap;
+    use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn test_render_tui() {
@@ -123,23 +153,28 @@ mod tests {
 
         // Case 1: Loading
         app.user_loading = true;
-        terminal.draw(|f| {
-            render_tui(f, &app, f.area());
-        }).unwrap();
+        terminal
+            .draw(|f| {
+                render_tui(f, &app, f.area());
+            })
+            .unwrap();
         // Assertions would go here
 
         // Case 2: Data loaded
         let mut computers = HashMap::new();
-        computers.insert("1".to_string(), ComputerResponse {
-            id: Some("1".to_string()),
-            name: Some("Test PC".to_string()),
-            os: Some("Windows".to_string()),
-            keys: Some("1000".to_string()),
-            clicks: Some("500".to_string()),
-            download_mb: None,
-            upload_mb: None,
-            extra: HashMap::new(),
-        });
+        computers.insert(
+            "1".to_string(),
+            ComputerResponse {
+                id: Some("1".to_string()),
+                name: Some("Test PC".to_string()),
+                os: Some("Windows".to_string()),
+                keys: Some("1000".to_string()),
+                clicks: Some("500".to_string()),
+                download_mb: None,
+                upload_mb: None,
+                extra: HashMap::new(),
+            },
+        );
 
         app.user_loading = false;
         app.user_stats = Some(UserResponse {
@@ -157,10 +192,15 @@ mod tests {
             extra: HashMap::new(),
         });
 
-        terminal.draw(|f| {
-            render_tui(f, &app, f.area());
-        }).unwrap();
-        
-        assert_eq!(terminal.backend().size().unwrap(), ratatui::layout::Size::new(40, 10));
+        terminal
+            .draw(|f| {
+                render_tui(f, &app, f.area());
+            })
+            .unwrap();
+
+        assert_eq!(
+            terminal.backend().size().unwrap(),
+            ratatui::layout::Size::new(40, 10)
+        );
     }
 }

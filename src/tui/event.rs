@@ -1,7 +1,7 @@
-use std::time::Duration;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use tokio::sync::mpsc;
 use crate::tui::app::Action;
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use std::time::Duration;
+use tokio::sync::mpsc;
 
 pub fn start_event_listener(tx: mpsc::Sender<Action>) {
     tokio::task::spawn_blocking(move || {
@@ -15,20 +15,18 @@ pub fn start_event_listener(tx: mpsc::Sender<Action>) {
 
             if event::poll(timeout).unwrap_or(false) {
                 match event::read() {
-                    Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-                        match key.code {
-                            KeyCode::Char('q') => {
-                                let _ = tx.blocking_send(Action::Quit);
-                                break;
-                            }
-                            KeyCode::Char('r') => {
-                                let _ = tx.blocking_send(Action::Refresh);
-                            }
-                            _ => {
-                                let _ = tx.blocking_send(Action::Key(key));
-                            }
+                    Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => match key.code {
+                        KeyCode::Char('q') => {
+                            let _ = tx.blocking_send(Action::Quit);
+                            break;
                         }
-                    }
+                        KeyCode::Char('r') => {
+                            let _ = tx.blocking_send(Action::Refresh);
+                        }
+                        _ => {
+                            let _ = tx.blocking_send(Action::Key(key));
+                        }
+                    },
                     _ => {}
                 }
             }

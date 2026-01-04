@@ -1,17 +1,18 @@
-use clap::Subcommand;
-use anyhow::Result;
 use crate::client::WhatpulseClient;
+use crate::tui::app::App;
+use anyhow::Result;
+use clap::Subcommand;
+use crossterm::event::KeyEvent;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use crate::tui::app::App;
-use crossterm::event::KeyEvent;
 
 pub mod calorimetry;
-pub mod user;
-pub mod pulses;
 pub mod computers;
+pub mod monitor;
+pub mod pulses;
 pub mod raw;
 pub mod tui;
+pub mod user;
 
 pub struct TuiPage {
     pub title: &'static str,
@@ -45,6 +46,8 @@ pub enum Commands {
         /// The API path (e.g., /api/v1/user)
         path: String,
     },
+    /// Monitor real-time pulses (CLI Mode)
+    Monitor,
 }
 
 impl Commands {
@@ -56,6 +59,7 @@ impl Commands {
             Commands::Calorimetry => calorimetry::execute(client).await,
             Commands::Tui => tui::execute(client).await,
             Commands::Raw { path } => raw::execute(client, path).await,
+            Commands::Monitor => monitor::execute(client).await,
         }
     }
 }

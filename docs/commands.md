@@ -58,13 +58,17 @@ Fun Comparisons:
 **Description:**
 Launches the interactive Terminal User Interface (dashboard). This mode provides a tabbed interface to view user stats, computer lists, and calorimetry data in a more visual way.
 
+**Modes:**
+*   **Web Mode:** Displays historical data with time period selection (Today, Yesterday, Week, etc.). Requires `WHATPULSE_API_KEY`.
+*   **Local Mode:** Displays real-time statistics directly from the local WhatPulse client. Shows Total Stats, Real-time Keys/sec, and Unpulsed Stats. No API Key required.
+
 **Controls:**
 *   **Global Navigation**:
     *   **Tab / Left / Right**: Navigate between main tabs.
     *   **q / Esc**: Quit.
     *   **r**: Refresh data.
 
-*   **Dashboard Tab**:
+*   **Dashboard Tab (Web Mode)**:
     *   **h / l** or **[ / ]**: Cycle through time periods (Today, Yesterday, Week, etc.).
     *   **/**: Switch to "Custom" period and open Date Picker.
     *   **Enter**: Open Date Picker (if "Custom" period is already selected).
@@ -72,6 +76,9 @@ Launches the interactive Terminal User Interface (dashboard). This mode provides
         *   **Arrow Keys**: Navigate calendar.
         *   **Enter**: Select Start/End date.
         *   **Esc**: Cancel.
+
+*   **Dashboard Tab (Local Mode)**:
+    *   Time period selection is disabled (real-time data only).
 
 *   **Calorimetry Tab**:
     *   **p**: Cycle through keyboard switch profiles.
@@ -87,7 +94,9 @@ wtfpulse tui
 **Source:** [`src/commands/user.rs`](../src/commands/user.rs)
 
 **Description:**
-Fetches and displays the current user's global statistics, including account name, total keys, clicks, and user ID.
+Fetches and displays the current user's global statistics.
+*   **Web Mode:** Fetches from `api.whatpulse.org`. Includes Account Name, ID, Total Keys, Clicks, and Ranks.
+*   **Local Mode:** Fetches from `localhost:3490/v1/account-totals`. Includes Total Keys, Clicks, Download, Upload, and Uptime.
 
 **Usage:**
 ```bash
@@ -100,7 +109,9 @@ wtfpulse user
 **Source:** [`src/commands/pulses.rs`](../src/commands/pulses.rs)
 
 **Description:**
-Retrieves the most recent pulses (updates) sent to the WhatPulse API. By default, it lists the top 5 most recent pulses.
+Retrieves the most recent pulses (updates) sent to the WhatPulse API.
+*   **Requirement:** Only available in **Web Mode** (requires `WHATPULSE_API_KEY`).
+*   **Local Mode:** Displays a message explaining that pulse history is not available locally.
 
 **Usage:**
 ```bash
@@ -113,11 +124,40 @@ wtfpulse pulses
 **Source:** [`src/commands/computers.rs`](../src/commands/computers.rs)
 
 **Description:**
-Lists all computers associated with your WhatPulse account, along with their individual statistics (keys, clicks).
+Lists all computers associated with your WhatPulse account.
+*   **Requirement:** Only available in **Web Mode** (requires `WHATPULSE_API_KEY`).
+*   **Local Mode:** Displays a message explaining that an API key is required to view per-computer stats.
 
 **Usage:**
 ```bash
 wtfpulse computers
+```
+
+---
+
+### `monitor` (Kinetic)
+**Source:** [`src/commands/monitor.rs`](../src/commands/monitor.rs)
+
+**Description:**
+A real-time, physics-based dashboard for visualizing your typing mechanics. This command works best in the TUI (as the "Kinetic" tab) but can also be run in CLI mode to stream raw WebSocket data.
+
+**TUI Features (Kinetic Tab):**
+*   **Real-time Gauges**: Displays instantaneous Power (Watts) and Keys/sec.
+*   **Physics Telemetry**:
+    *   **Peak Velocity**: Maximum speed of finger travel (m/s or cm/s).
+    *   **Burst Acceleration**: Maximum acceleration during typing bursts.
+    *   **Work**: Accumulated energy in Joules.
+*   **Sparkline**: A scrolling graph of power output over time.
+
+**Controls:**
+*   **`u`**: Toggle units between **Metric** (m/s) and **Centimeters** (cm/s).
+*   **`p`**: Switch keyboard profiles (e.g., Cherry MX Red vs Blue) to adjust force/distance constants.
+*   **`Space`**: Manually trigger a pulse (Local Mode only).
+
+**Usage (CLI Mode):**
+Streams raw JSON events from the local WhatPulse client WebSocket.
+```bash
+wtfpulse monitor
 ```
 
 ---

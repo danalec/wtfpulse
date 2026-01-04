@@ -1,6 +1,6 @@
 # wtfpulse
 
-**wtfpulse** is a high-performance, asynchronous Rust CLI tool and TUI dashboard for the WhatPulse Web API. Beyond simple data retrieval, it offers interactive data visualization, advanced filtering, and physics-based energy estimation for your typing habits—all from the comfort of your terminal.
+**wtfpulse** is a high-performance, asynchronous Rust CLI tool and TUI dashboard for WhatPulse. It supports both the **Web API** (online stats, pulse history) and the **Client API** (real-time local stats), offering interactive data visualization, advanced filtering, and physics-based energy estimation for your typing habits—all from the comfort of your terminal.
 
 ![Dashboard Screenshot](screenshot.png)
 
@@ -8,7 +8,10 @@
 
 ### Purpose and Scope
 
-The goal of `wtfpulse` is to provide a type-safe, efficient, and easy-to-use command-line interface for the WhatPulse Web API. Unlike the local Client API (which requires the WhatPulse client to be running locally), this tool connects directly to `api.whatpulse.org`, making it suitable for server-side scripts, CI/CD pipelines, or standalone monitoring tools.
+The goal of `wtfpulse` is to provide a type-safe, efficient, and easy-to-use command-line interface for WhatPulse. It bridges the gap between your local activity and your online profile:
+
+*   **Web API Mode**: Connects to `api.whatpulse.org` to fetch historical data, pulses, and global ranks. Requires an API Key.
+*   **Local Client Mode**: Connects to your running WhatPulse client (`localhost:3489`) to display real-time keys/sec, unpulsed stats, and total counters. No API Key required.
 
 ### Target Audience
 - **Developers** integrating WhatPulse stats into their dashboards.
@@ -22,7 +25,7 @@ The goal of `wtfpulse` is to provide a type-safe, efficient, and easy-to-use com
 ### System Requirements
 - **OS**: Windows, macOS, or Linux
 - **Rust Toolchain**: 1.70.0 or later (includes `cargo`)
-- **Network**: Internet connection to reach `api.whatpulse.org`
+- **Network**: Internet connection (Web Mode) or running WhatPulse Client (Local Mode)
 
 ### Step-by-Step Installation
 
@@ -45,7 +48,12 @@ The goal of `wtfpulse` is to provide a type-safe, efficient, and easy-to-use com
     ```
 
 ### Configuration
-The tool relies on an environment variable for authentication. You must generate a **Web API Token** from your WhatPulse account settings.
+
+#### Web Mode (Recommended)
+To access historical data, pulses, and global ranks, you must provide a **Web API Token**.
+1.  Go to your [WhatPulse Dashboard](https://whatpulse.org/dashboard).
+2.  Generate a Web API Token.
+3.  Set the environment variable:
 
 **PowerShell:**
 ```powershell
@@ -56,6 +64,11 @@ $env:WHATPULSE_API_KEY = "your-long-bearer-token"
 ```bash
 export WHATPULSE_API_KEY="your-long-bearer-token"
 ```
+
+#### Local Mode
+If no `WHATPULSE_API_KEY` is set, `wtfpulse` automatically falls back to **Local Mode**.
+*   **Requirement**: The WhatPulse client must be running and the **Client API** must be enabled in Settings.
+*   **Features**: Real-time stats, unpulsed counts, and total stats. (Pulse history and detailed period filtering are disabled).
 
 ---
 
@@ -75,11 +88,14 @@ wtfpulse [SUBCOMMAND]
 If no subcommand is provided, it defaults to the **TUI Dashboard**.
 
 ### Core Features
-- **TUI Dashboard**: Interactive terminal interface with dynamic tab system, real-time filtering, and custom date range analysis.
+- **TUI Dashboard**: Interactive terminal interface.
+    - **Web Mode**: Dynamic tab system, real-time filtering, custom date range analysis.
+    - **Local Mode**: Real-time typing speed (Keys/s), unpulsed stats, and total counters.
 - **User Stats**: View global keys, clicks, and rank.
-- **Pulses**: List recent pulse history.
+- **Pulses**: List recent pulse history (Web Mode only).
 - **Computers**: Enumerate all computers associated with the account.
-- **Calorimetry**: Calculate energy burned by typing (physics-based estimation).
+- **Calorimetry**: Calculate energy burned by typing (physics-based estimation). Works in both modes.
+- **Kinetic Monitor**: Real-time visualization of typing velocity, acceleration, and power.
 - **Raw Access**: Query any API endpoint manually for debugging or new features.
 
 ### TUI Dashboard Features
@@ -89,13 +105,13 @@ The interactive dashboard (`wtfpulse tui` or just `wtfpulse`) offers a rich, ter
 #### Navigation & Global Controls
 | Key | Action |
 | :--- | :--- |
-| `Tab` / `Right Arrow` | Switch to the next tab (Dashboard, Computers, Pulses, etc.). |
+| `Tab` / `Right Arrow` | Switch to the next tab (Dashboard, Computers, Pulses, Kinetic, etc.). |
 | `Left Arrow` | Switch to the previous tab. |
 | `r` | **Refresh** data from the API. |
 | `q` | **Quit** the application immediately. |
 | `Esc` | **Quit** the application (unless a popup is open). |
 
-#### Dashboard Tab
+#### Dashboard Tab (Web Mode)
 The main **Dashboard** tab provides a summary of your activity with powerful time-based filtering.
 
 **Time Period Selection:**
@@ -108,16 +124,21 @@ You can filter your displayed stats (Keys, Clicks, Download, Upload) by specific
 | `/` | **Quick Switch to Custom Range**: Automatically selects "Custom" and opens the Date Picker. |
 | `Enter` | Open the Date Picker (only when "Custom" period is already active). |
 
-**Available Periods:**
-- **Today**: Stats for the current day.
-- **Yesterday**: Stats for the previous day.
-- **Week**: Last 7 days.
-- **Month**: Last 30 days.
-- **Year**: Last 365 days.
-- **All**: Lifetime statistics (Default).
-- **Custom**: User-defined date range.
+#### Dashboard Tab (Local Mode)
+When running without an API key, the dashboard simplifies to show real-time metrics:
+*   **Total Stats**: Lifetime keys, clicks, uptime.
+*   **Real-time Stats**: Current typing speed (Keys/s) and estimated power (Watts).
+*   **Unpulsed Stats**: Pending keys and clicks since the last pulse.
 
-#### Custom Date Picker
+#### Kinetic Tab
+A physics-based dashboard for real-time typing analysis.
+*   **Metrics**: Peak Finger Velocity, Burst Acceleration, Instantaneous Power (Watts).
+*   **Controls**:
+    *   **`u`**: Toggle units between **Metric (m/s)** and **Centimeters (cm/s)**.
+    *   **`p`**: Cycle through keyboard switch profiles (affects force/distance calculations).
+    *   **`Space`**: Trigger a manual pulse (Local Mode only).
+
+#### Custom Date Picker (Web Mode Only)
 When you press `/` or select "Custom", a calendar popup appears, allowing you to define a specific analysis range.
 
 **How to Use:**
@@ -150,7 +171,7 @@ User: UserResponse { id: Some("12345"), username: Some("JaneDoe"), keys: Some(15
 Username: JaneDoe
 ```
 
-#### Example 2: Listing Recent Pulses
+#### Example 2: Listing Recent Pulses (Web Mode)
 **Description**: View the last 5 pulses to track your recent activity.
 
 **Code**:
@@ -193,20 +214,19 @@ cargo run -- raw /api/v1/user
 
 ## API Reference
 
-This tool maps to the standard WhatPulse Web API.
+This tool maps to the standard WhatPulse Web API and the Local Client API.
 
 | Command | Target Endpoint | Description |
 | :--- | :--- | :--- |
-| `user` | `/api/v1/user` | Fetches `UserResponse` object. |
-| `pulses` | `/api/v1/pulses` | Fetches array of `PulseResponse` objects. |
-| `computers` | `/api/v1/computers` | Fetches array of `ComputerResponse` objects. |
-
-**Note**: The actual endpoints (`/api/v1/...`) in the code are placeholders based on the task description. In a real-world scenario, these would match the official `api.whatpulse.org` PHP endpoints (e.g., `user.php`).
+| `user` | `/api/v1/user` (Web) or `/v1/account-totals` (Local) | Fetches User object (Account Name, Keys, Clicks). |
+| `pulses` | `/api/v1/pulses` (Web) | Fetches array of `PulseResponse` objects. (Web Only) |
+| `computers` | `/api/v1/computers` (Web) | Fetches array of `ComputerResponse` objects. (Web Only) |
 
 ### Error Codes
-- **401 Unauthorized**: Your `WHATPULSE_API_KEY` is missing or invalid.
+- **401 Unauthorized**: Your `WHATPULSE_API_KEY` is missing or invalid (Web Mode).
 - **404 Not Found**: The endpoint path is incorrect.
 - **500 Internal Server Error**: The WhatPulse API is experiencing issues.
+- **Connection Refused**: The Local Client is not running or Client API is disabled (Local Mode).
 
 ---
 
@@ -216,15 +236,15 @@ This tool maps to the standard WhatPulse Web API.
 
 1.  **"set WHATPULSE_API_KEY environment variable..."**
     - **Cause**: The tool cannot find the API key in your environment.
-    - **Solution**: Export the variable as shown in the Configuration section.
+    - **Solution**: Export the variable for Web Mode, or ensure the Client is running for Local Mode.
 
 2.  **"request failed: GET ..."**
     - **Cause**: Network connectivity issue or DNS failure.
     - **Solution**: Check your internet connection and ensure `api.whatpulse.org` is reachable.
 
-3.  **JSON Parse Error**
-    - **Cause**: The API response format has changed or is unexpected.
-    - **Solution**: Use the `raw` command to inspect the actual JSON response and report an issue.
+3.  **"No computers available in Local Mode"**
+    - **Cause**: Local Mode does not support per-computer statistics.
+    - **Solution**: Add a valid `WHATPULSE_API_KEY` to switch to Web Mode.
 
 ### Debugging
 To see more details, you can run the tool with Rust backtraces enabled if it crashes:
@@ -237,13 +257,15 @@ RUST_BACKTRACE=1 cargo run -- user
 ## FAQ
 
 **Q: Can I use this with the local client API?**
-A: No, this tool is designed for the Web API. The local client API runs on `localhost:3490` and has a different authentication mechanism.
+A: Yes! If you don't provide an API key, `wtfpulse` automatically connects to `localhost:3490` to fetch real-time stats from your running client.
 
 **Q: Is this official?**
 A: No, this is a community-driven open-source project.
 
 **Q: How often can I pull data?**
-A: Respect WhatPulse's API rate limits. Generally, do not poll more than once every few minutes.
+A:
+*   **Web Mode**: Respect WhatPulse's API rate limits. Generally, do not poll more than once every few minutes.
+*   **Local Mode**: You can poll as often as you like (real-time).
 
 ---
 
