@@ -14,9 +14,7 @@ This document provides a detailed reference for the `wtfpulse` command-line inte
 Calculates the estimated energy expenditure (in calories) based on your total keystrokes. This module applies physics principles to estimate the work performed by your fingers.
 
 **How it works:**
-The calculation assumes the usage of a standard mechanical keyboard switch (e.g., Cherry MX Red) with the following constants:
-*   **Actuation Force**: ~0.45 Newtons (45g)
-*   **Travel Distance**: ~4.0 millimeters (0.004 meters)
+The calculation assumes the usage of a standard mechanical keyboard switch. In the TUI mode, you can interactively switch between profiles (e.g., Cherry MX Red, Blue, Brown, Membrane) to see how different force/distance parameters affect the result.
 
 **Formula:**
 $$ Work (J) = Force (N) \times Distance (m) \times Keystrokes $$
@@ -34,6 +32,7 @@ The command also provides fun comparisons to put the energy into perspective:
 ```bash
 wtfpulse calorimetry
 ```
+*Note: For the interactive version with profile switching, use `wtfpulse tui`.*
 
 **Example Output:**
 ```text
@@ -49,6 +48,25 @@ Calories Burned:  6,639.03 cal
 Fun Comparisons:
 • Equivalent to 0.6639 M&Ms
 • Like running for 39.8 seconds
+```
+
+---
+
+### `tui`
+**Source:** [`src/tui/`](../src/tui/)
+
+**Description:**
+Launches the interactive Terminal User Interface (dashboard). This mode provides a tabbed interface to view user stats, computer lists, and calorimetry data in a more visual way.
+
+**Controls:**
+*   **Tab / Left / Right**: Navigate between tabs.
+*   **p**: Cycle through keyboard switch profiles (in Calorimetry tab).
+*   **r**: Refresh data.
+*   **q / Esc**: Quit.
+
+**Usage:**
+```bash
+wtfpulse tui
 ```
 
 ---

@@ -1,12 +1,32 @@
 use clap::Subcommand;
 use anyhow::Result;
 use crate::client::WhatpulseClient;
+use ratatui::Frame;
+use ratatui::layout::Rect;
+use crate::tui::app::App;
+use crossterm::event::KeyEvent;
 
 pub mod calorimetry;
 pub mod user;
 pub mod pulses;
 pub mod computers;
 pub mod raw;
+pub mod tui;
+
+pub struct TuiPage {
+    pub title: &'static str,
+    pub render: fn(&mut Frame, &App, Rect),
+    pub handle_key: fn(&mut App, KeyEvent) -> bool,
+    pub priority: usize,
+}
+
+inventory::collect!(TuiPage);
+
+pub fn get_pages() -> Vec<&'static TuiPage> {
+    let mut pages: Vec<&'static TuiPage> = inventory::iter::<TuiPage>.into_iter().collect();
+    pages.sort_by_key(|p| p.priority);
+    pages
+}
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -18,6 +38,8 @@ pub enum Commands {
     Computers,
     /// Calculate energy expenditure
     Calorimetry,
+    /// Launch the interactive dashboard
+    Tui,
     /// Fetch raw JSON from a specific path
     Raw {
         /// The API path (e.g., /api/v1/user)
@@ -32,6 +54,7 @@ impl Commands {
             Commands::Pulses => pulses::execute(client).await,
             Commands::Computers => computers::execute(client).await,
             Commands::Calorimetry => calorimetry::execute(client).await,
+            Commands::Tui => tui::execute(client).await,
             Commands::Raw { path } => raw::execute(client, path).await,
         }
     }

@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::env;
+use std::fs::File;
+use simplelog::*;
 
 mod client;
 mod commands;
+pub mod tui;
 
 use client::WhatpulseClient;
 use commands::Commands;
@@ -18,6 +21,14 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env file if it exists
+    dotenv::dotenv().ok();
+
+    // Initialize logging
+    if let Ok(file) = File::create("wtfpulse.log") {
+        let _ = WriteLogger::init(LevelFilter::Info, Config::default(), file);
+    }
+
     let args = Cli::parse();
     
     // Read `WHATPULSE_API_KEY` from environment.

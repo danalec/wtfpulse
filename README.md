@@ -60,6 +60,8 @@ export WHATPULSE_API_KEY="your-long-bearer-token"
 
 For a complete list of commands and detailed explanations, please refer to the [Commands Reference](docs/commands.md).
 
+For developers interested in the internal structure or adding new commands, see the [Architecture Guide](docs/architecture.md).
+
 If you want to contribute or add new commands, check out the [Contribution Guide](docs/contributing.md).
 
 `wtfpulse` uses a subcommand structure. The general syntax is:
@@ -68,6 +70,7 @@ wtfpulse <SUBCOMMAND>
 ```
 
 ### Core Features
+- **TUI Dashboard**: Interactive terminal interface with dynamic tab system.
 - **User Stats**: View global keys, clicks, and rank.
 - **Pulses**: List recent pulse history.
 - **Computers**: Enumerate all computers associated with the account.
