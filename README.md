@@ -58,6 +58,10 @@ export WHATPULSE_API_KEY="your-long-bearer-token"
 
 ## Usage Documentation
 
+For a complete list of commands and detailed explanations, please refer to the [Commands Reference](docs/commands.md).
+
+If you want to contribute or add new commands, check out the [Contribution Guide](docs/contributing.md).
+
 `wtfpulse` uses a subcommand structure. The general syntax is:
 ```bash
 wtfpulse <SUBCOMMAND>
@@ -67,6 +71,7 @@ wtfpulse <SUBCOMMAND>
 - **User Stats**: View global keys, clicks, and rank.
 - **Pulses**: List recent pulse history.
 - **Computers**: Enumerate all computers associated with the account.
+- **Calorimetry**: Calculate energy burned by typing (physics-based estimation).
 - **Raw Access**: Query any API endpoint manually for debugging or new features.
 
 ### Practical Examples
