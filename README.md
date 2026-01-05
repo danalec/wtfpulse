@@ -154,8 +154,19 @@ Visualizes your vertical scroll distance.
 *   **Controls**:
     *   **`m`**: Toggle between **Lifetime** (total history) and **Session** (since launch) modes.
 
+#### Settings Tab
+Configure your `wtfpulse` experience directly from the TUI.
+*   **Controls**:
+    *   **`r`**: Cycle refresh rate (1s, 5s, 10s, 30s, 60s).
+    *   **`e`**: Edit API Key.
+    *   **`S`**: Save configuration manually.
+*   **API Key Editing**:
+    *   **`Enter`**: Save and apply changes.
+    *   **`Esc`**: Cancel editing.
+    *   **`Ctrl+V`**: Paste from clipboard.
+
 #### Custom Date Picker (Web Mode Only)
-When you press `/` or select "Custom", a calendar popup appears, allowing you to define a specific analysis range.
+When you press `/` or select "Custom" in the Dashboard, Applications, or Network tabs, a calendar popup appears.
 
 **How to Use:**
 1.  **Start Date**: The picker opens asking for the *Start Date*. Navigate to your desired start date and press `Enter`.

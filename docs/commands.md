@@ -68,7 +68,7 @@ Launches the interactive Terminal User Interface (dashboard). This mode provides
     *   **q / Esc**: Quit.
     *   **r**: Refresh data.
 
-*   **Dashboard Tab (Web Mode)**:
+*   **Dashboard / Applications / Network Tabs (Web Mode)**:
     *   **h / l** or **[ / ]**: Cycle through time periods (Today, Yesterday, Week, etc.).
     *   **/**: Switch to "Custom" period and open Date Picker.
     *   **Enter**: Open Date Picker (if "Custom" period is already selected).
@@ -92,6 +92,15 @@ Launches the interactive Terminal User Interface (dashboard). This mode provides
     *   **Physics**: 1 Scroll Tick = 1.6 cm.
     *   **Controls**:
         *   **`m`**: Toggle **Lifetime** / **Session** mode.
+
+*   **Settings Tab**:
+    *   **r**: Cycle refresh rate.
+    *   **e**: Edit API Key.
+    *   **S**: Save configuration.
+    *   **Editing Mode**:
+        *   **Enter**: Save changes.
+        *   **Esc**: Cancel changes.
+        *   **Ctrl+V**: Paste from clipboard.
 
 **Usage:**
 ```bash

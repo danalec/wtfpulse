@@ -3,7 +3,7 @@ use crate::commands::calorimetry::{EnergyStats, SwitchProfile, calculate_energy}
 use crate::commands::get_pages;
 use crate::commands::keyboard::layouts::KeyboardLayout;
 use crate::commands::keyboard::layouts::get_api_key_from_char;
-use crate::db::MouseStats;
+use crate::db::{AppStats, MouseStats, NetworkStats};
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -13,6 +13,33 @@ use log::info;
 use std::collections::HashMap;
 
 use std::cell::RefCell;
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SortOrder {
+    #[default]
+    Descending,
+    Ascending,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum AppSortMode {
+    #[default]
+    Keys,
+    Clicks,
+    Scrolls,
+    Download,
+    Upload,
+    Name,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum NetworkSortMode {
+    #[default]
+    Download,
+    Upload,
+    Total,
+    Interface,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct KineticStats {
@@ -136,6 +163,8 @@ pub enum Action {
     MouseHeatmapLoaded(Vec<Vec<u64>>),
     MouseHeatmapError(String),
     MouseStatsLoaded(Box<ExtendedMouseStats>),
+    AppStatsLoaded(Result<Vec<AppStats>>),
+    NetworkStatsLoaded(Result<Vec<NetworkStats>>),
     WebSocketStatus(bool, Option<String>),
     RealtimeUpdate(RealtimeData),
     DebugInfo(String),
@@ -230,7 +259,6 @@ pub struct App {
     pub unit_system: UnitSystem,
     pub heatmap_data: HashMap<String, u64>,
     pub keyboard_layout: KeyboardLayout,
-    // Heatmap Layout Popup State
     pub show_layout_popup: bool,
     pub layout_search_query: String,
     pub layout_list_state: RefCell<ratatui::widgets::ListState>,
@@ -246,11 +274,31 @@ pub struct App {
     pub mouse_stats: ExtendedMouseStats,
     pub show_mouse_stats: bool,
     pub mouse_period: TimePeriod,
+    pub app_stats: Vec<AppStats>,
+    pub app_stats_period: TimePeriod,
+    pub app_sort_mode: AppSortMode,
+    pub app_sort_order: SortOrder,
+    pub network_stats: Vec<NetworkStats>,
+    pub network_stats_period: TimePeriod,
+    pub network_sort_mode: NetworkSortMode,
+    pub network_sort_order: SortOrder,
     pub pulses_table_state: RefCell<ratatui::widgets::TableState>,
+    pub apps_table_state: RefCell<ratatui::widgets::TableState>,
+    pub network_table_state: RefCell<ratatui::widgets::TableState>,
+    pub last_refresh: std::time::Instant,
+    pub refresh_rate: std::time::Duration,
+    pub config: crate::config::AppConfig,
+    pub is_editing_api_key: bool,
+    pub api_key_input: String,
+    pub notification: Option<(String, std::time::Instant)>,
 }
 
 impl App {
     pub fn new(client: WhatpulseClient, tx: mpsc::Sender<Action>) -> Self {
+        let config = crate::config::AppConfig::load().unwrap_or_default();
+        let refresh_rate =
+            std::time::Duration::from_secs(config.refresh_rate_seconds.unwrap_or(60));
+
         Self {
             user_stats: None,
             recent_pulses: Vec::new(),
@@ -293,8 +341,28 @@ impl App {
             mouse_stats: ExtendedMouseStats::default(),
             show_mouse_stats: false,
             mouse_period: TimePeriod::Today,
+            app_stats: Vec::new(),
+            app_stats_period: TimePeriod::All,
+            network_stats: Vec::new(),
+            network_stats_period: TimePeriod::All,
             pulses_table_state: RefCell::new(ratatui::widgets::TableState::default()),
+            apps_table_state: RefCell::new(ratatui::widgets::TableState::default()),
+            network_table_state: RefCell::new(ratatui::widgets::TableState::default()),
+            app_sort_mode: AppSortMode::default(),
+            app_sort_order: SortOrder::default(),
+            network_sort_mode: NetworkSortMode::default(),
+            network_sort_order: SortOrder::default(),
+            last_refresh: std::time::Instant::now(),
+            refresh_rate,
+            config,
+            is_editing_api_key: false,
+            api_key_input: String::new(),
+            notification: None,
         }
+    }
+
+    pub fn set_notification(&mut self, message: String) {
+        self.notification = Some((message, std::time::Instant::now()));
     }
 
     pub fn set_monitor_tx(&mut self, tx: mpsc::Sender<MonitorCommand>) {
@@ -358,7 +426,10 @@ impl App {
                 return true;
             }
             Action::Tick => {
-                // No time-based physics updates needed anymore
+                if self.last_refresh.elapsed() >= self.refresh_rate {
+                    self.last_refresh = std::time::Instant::now();
+                    let _ = self.tx.send(Action::Refresh).await;
+                }
             }
             Action::Refresh => {
                 self.user_loading = true;
@@ -366,6 +437,12 @@ impl App {
                 spawn_fetch(self.client.clone(), self.tx.clone());
             }
             Action::Key(key) => {
+                // If there is an error popup, any key dismisses it
+                if self.error.is_some() {
+                    self.error = None;
+                    return false;
+                }
+
                 // Update Session Heatmap from TUI inputs
                 let key_str = match key.code {
                     KeyCode::Char(c) => Some(get_api_key_from_char(c)),
@@ -522,6 +599,22 @@ impl App {
                 self.mouse_stats = *stats;
                 self.recalculate_unpulsed();
             }
+            Action::AppStatsLoaded(res) => match res {
+                Ok(stats) => {
+                    self.app_stats = stats;
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to load app stats: {}", e));
+                }
+            },
+            Action::NetworkStatsLoaded(res) => match res {
+                Ok(stats) => {
+                    self.network_stats = stats;
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to load network stats: {}", e));
+                }
+            },
             Action::WebSocketStatus(connected, error) => {
                 self.kinetic_stats.is_connected = connected;
                 self.kinetic_stats.connection_error = error;
@@ -612,6 +705,52 @@ impl App {
         }
         false
     }
+
+    pub fn get_uptime(&self) -> String {
+        let _uptime_seconds = self.kinetic_stats.unpulsed_keys; // Placeholder
+        // Real implementation would track start time
+        "N/A".to_string()
+    }
+
+    pub fn sort_app_stats(&mut self) {
+        let mode = self.app_sort_mode;
+        let order = self.app_sort_order;
+
+        self.app_stats.sort_by(|a, b| {
+            let cmp = match mode {
+                AppSortMode::Keys => a.keys.cmp(&b.keys),
+                AppSortMode::Clicks => a.clicks.cmp(&b.clicks),
+                AppSortMode::Scrolls => a.scrolls.cmp(&b.scrolls),
+                AppSortMode::Download => a.download_mb.partial_cmp(&b.download_mb).unwrap_or(std::cmp::Ordering::Equal),
+                AppSortMode::Upload => a.upload_mb.partial_cmp(&b.upload_mb).unwrap_or(std::cmp::Ordering::Equal),
+                AppSortMode::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            };
+
+            match order {
+                SortOrder::Ascending => cmp,
+                SortOrder::Descending => cmp.reverse(),
+            }
+        });
+    }
+
+    pub fn sort_network_stats(&mut self) {
+        let mode = self.network_sort_mode;
+        let order = self.network_sort_order;
+
+        self.network_stats.sort_by(|a, b| {
+            let cmp = match mode {
+                NetworkSortMode::Download => a.download_mb.partial_cmp(&b.download_mb).unwrap_or(std::cmp::Ordering::Equal),
+                NetworkSortMode::Upload => a.upload_mb.partial_cmp(&b.upload_mb).unwrap_or(std::cmp::Ordering::Equal),
+                NetworkSortMode::Total => (a.download_mb + a.upload_mb).partial_cmp(&(b.download_mb + b.upload_mb)).unwrap_or(std::cmp::Ordering::Equal),
+                NetworkSortMode::Interface => a.interface.to_lowercase().cmp(&b.interface.to_lowercase()),
+            };
+
+            match order {
+                SortOrder::Ascending => cmp,
+                SortOrder::Descending => cmp.reverse(),
+            }
+        });
+    }
 }
 
 pub fn spawn_fetch(client: WhatpulseClient, tx: mpsc::Sender<Action>) {
@@ -671,6 +810,8 @@ pub fn spawn_fetch(client: WhatpulseClient, tx: mpsc::Sender<Action>) {
     });
 
     spawn_fetch_mouse_stats(tx.clone());
+    spawn_fetch_app_stats(tx.clone(), "all");
+    spawn_fetch_network_stats(tx.clone(), "all");
 }
 
 pub fn spawn_fetch_mouse_stats(tx: mpsc::Sender<Action>) {
@@ -701,6 +842,48 @@ pub fn spawn_fetch_mouse_stats(tx: mpsc::Sender<Action>) {
             }
             Err(e) => {
                 log::error!("Join error fetching mouse stats: {}", e);
+            }
+        }
+    });
+}
+
+pub fn spawn_fetch_app_stats(tx: mpsc::Sender<Action>, period: &str) {
+    let tx_app = tx.clone();
+    let period = period.to_string();
+    tokio::spawn(async move {
+        let stats = tokio::task::spawn_blocking(move || -> Result<Vec<AppStats>> {
+            let db = crate::db::Database::new()?;
+            db.get_app_stats(&period)
+        })
+        .await;
+
+        match stats {
+            Ok(res) => {
+                let _ = tx_app.send(Action::AppStatsLoaded(res)).await;
+            }
+            Err(e) => {
+                let _ = tx_app.send(Action::AppStatsLoaded(Err(e.into()))).await;
+            }
+        }
+    });
+}
+
+pub fn spawn_fetch_network_stats(tx: mpsc::Sender<Action>, period: &str) {
+    let tx_net = tx.clone();
+    let period = period.to_string();
+    tokio::spawn(async move {
+        let stats = tokio::task::spawn_blocking(move || -> Result<Vec<NetworkStats>> {
+            let db = crate::db::Database::new()?;
+            db.get_network_stats(&period)
+        })
+        .await;
+
+        match stats {
+            Ok(res) => {
+                let _ = tx_net.send(Action::NetworkStatsLoaded(res)).await;
+            }
+            Err(e) => {
+                let _ = tx_net.send(Action::NetworkStatsLoaded(Err(e.into()))).await;
             }
         }
     });

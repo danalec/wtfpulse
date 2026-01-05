@@ -6,6 +6,14 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+struct ClientCache {
+    pulses: Option<(Vec<PulseResponse>, Instant)>,
+    user: Option<(UserResponse, Instant)>,
+    computers: Option<(Vec<ComputerResponse>, Instant)>,
+}
 
 #[derive(Clone)]
 pub struct WhatpulseClient {
@@ -13,6 +21,7 @@ pub struct WhatpulseClient {
     base_url: String,
     _user_id: String,
     is_local: bool,
+    cache: Arc<Mutex<ClientCache>>,
 }
 
 impl WhatpulseClient {
@@ -39,6 +48,11 @@ impl WhatpulseClient {
             base_url: "https://whatpulse.org/api/v1".to_string(),
             _user_id: user_id,
             is_local: false,
+            cache: Arc::new(Mutex::new(ClientCache {
+                pulses: None,
+                user: None,
+                computers: None,
+            })),
         })
     }
 
@@ -53,6 +67,11 @@ impl WhatpulseClient {
             base_url: "http://localhost:3490".to_string(),
             _user_id: "local".to_string(),
             is_local: true,
+            cache: Arc::new(Mutex::new(ClientCache {
+                pulses: None,
+                user: None,
+                computers: None,
+            })),
         })
     }
 
@@ -88,14 +107,41 @@ impl WhatpulseClient {
         if self.is_local {
             return self.get_user_local().await;
         }
+
+        // Check cache
+        if let Ok(cache) = self.cache.lock() {
+            if let Some((user, timestamp)) = &cache.user {
+                if timestamp.elapsed() < Duration::from_secs(300) {
+                    debug!("Returning cached user");
+                    return Ok(user.clone());
+                }
+            }
+        }
+
         let url = format!("/users/{}", self._user_id);
         let wrapper = self.get_json::<UserWrapper>(&url).await?;
+
+        // Update cache
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.user = Some((wrapper.user.clone(), Instant::now()));
+        }
+
         Ok(wrapper.user)
     }
 
     pub async fn get_pulses(&self) -> Result<Vec<PulseResponse>> {
         if self.is_local {
             return Ok(Vec::new());
+        }
+
+        // Check cache
+        if let Ok(cache) = self.cache.lock() {
+            if let Some((pulses, timestamp)) = &cache.pulses {
+                if timestamp.elapsed() < Duration::from_secs(300) {
+                    debug!("Returning cached pulses");
+                    return Ok(pulses.clone());
+                }
+            }
         }
 
         let mut all_pulses = Vec::new();
@@ -118,6 +164,11 @@ impl WhatpulseClient {
             }
         }
 
+        // Update cache
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.pulses = Some((all_pulses.clone(), Instant::now()));
+        }
+
         Ok(all_pulses)
     }
 
@@ -125,8 +176,25 @@ impl WhatpulseClient {
         if self.is_local {
             return Ok(Vec::new());
         }
+
+        // Check cache
+        if let Ok(cache) = self.cache.lock() {
+            if let Some((computers, timestamp)) = &cache.computers {
+                if timestamp.elapsed() < Duration::from_secs(300) {
+                    debug!("Returning cached computers");
+                    return Ok(computers.clone());
+                }
+            }
+        }
+
         let url = format!("/users/{}/computers", self._user_id);
         let resp = self.get_json::<ComputerListResponse>(&url).await?;
+
+        // Update cache
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.computers = Some((resp.computers.clone(), Instant::now()));
+        }
+
         Ok(resp.computers)
     }
 
@@ -419,7 +487,7 @@ struct PulseListResponse {
     pub filters: Option<PulseFilters>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct UserResponse {
     pub id: u64,
     pub username: String,

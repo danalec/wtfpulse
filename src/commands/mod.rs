@@ -6,14 +6,17 @@ use crossterm::event::KeyEvent;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
+pub mod applications;
 pub mod calorimetry;
 pub mod computers;
 pub mod keyboard;
 pub mod monitor;
 pub mod mouse;
+pub mod network;
 pub mod pulses;
 pub mod raw;
 pub mod scroll_tower;
+pub mod settings;
 pub mod tui;
 pub mod user;
 

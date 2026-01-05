@@ -60,7 +60,7 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) -> bool {
 
 fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     if app.date_picker.open {
-        crate::commands::keyboard::handle_date_picker_key(app, key);
+        crate::tui::period_utils::handle_date_picker_key(app, key);
         if !app.date_picker.open {
             // If closed, fetch heatmap with new range if custom
             fetch_mouse_heatmap(app);
@@ -175,7 +175,7 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
     render_footer(f, app, footer_area);
 
     if app.date_picker.open {
-        crate::commands::keyboard::render_date_picker(f, app, area);
+        crate::tui::ui::render_date_picker(f, app, area);
     }
 
     if app.show_mouse_stats {
@@ -190,7 +190,7 @@ fn render_mouse_stats_popup(f: &mut Frame, app: &App, area: Rect) {
         .style(Style::default().bg(Color::Black));
 
     // Fixed size popup
-    let popup_area = crate::commands::keyboard::centered_fixed_area(40, 20, area);
+    let popup_area = crate::tui::ui::centered_fixed_area(40, 20, area);
 
     f.render_widget(Clear, popup_area);
     f.render_widget(block.clone(), popup_area);
@@ -239,8 +239,8 @@ fn render_mouse_stats_popup(f: &mut Frame, app: &App, area: Rect) {
         "_.--\"\"\"\"--._       \n\
         .'     |   |    '.      \n\
        /  {:^4}|{:^4}|{:^4}  \\     \n\
-      |      |    |       |    \n\
-      |      |____|       |    \n\
+      |      |    |      |    \n\
+      |      |____|      |    \n\
       |                  |    \n\
       |                  |    \n\
       |                  |    \n\
