@@ -96,6 +96,7 @@ If no subcommand is provided, it defaults to the **TUI Dashboard**.
 - **Computers**: Enumerate all computers associated with the account.
 - **Calorimetry**: Calculate energy burned by typing (physics-based estimation). Works in both modes.
 - **Kinetic Monitor**: Real-time visualization of typing velocity, acceleration, and power.
+- **The Scroll Tower**: Gamifies scrolling by visualizing your total vertical scroll distance against real-world landmarks. Fully stateless, based on your lifetime metrics.
 - **Heatmap**: Visualizes your keyboard usage heatmap using local data (always uses Local DB).
 - **Raw Access**: Query any API endpoint manually for debugging or new features.
 
@@ -146,6 +147,12 @@ A physics-based dashboard for real-time typing analysis.
     *   **`u`**: Toggle units between **Metric (m/s)** and **Centimeters (cm/s)**.
     *   **`p`**: Cycle through keyboard switch profiles (affects force/distance calculations).
     *   **`Space`**: Trigger a manual pulse (Local Mode only).
+
+#### Scroll Tower Tab
+Visualizes your vertical scroll distance.
+*   **Physics**: 1 Scroll Tick = 1.6 cm.
+*   **Controls**:
+    *   **`m`**: Toggle between **Lifetime** (total history) and **Session** (since launch) modes.
 
 #### Custom Date Picker (Web Mode Only)
 When you press `/` or select "Custom", a calendar popup appears, allowing you to define a specific analysis range.

@@ -6,6 +6,7 @@ use std::fs::File;
 
 mod client;
 mod commands;
+
 pub mod key_mapping;
 pub mod tui;
 

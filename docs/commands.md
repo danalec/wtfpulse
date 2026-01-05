@@ -87,6 +87,12 @@ Launches the interactive Terminal User Interface (dashboard). This mode provides
 *   **Calorimetry Tab**:
     *   **p**: Cycle through keyboard switch profiles.
 
+*   **Scroll Tower Tab**:
+    *   Visualizes your total vertical scroll distance against famous landmarks (Christ the Redeemer, Eiffel Tower, Burj Khalifa, Space).
+    *   **Physics**: 1 Scroll Tick = 1.6 cm.
+    *   **Controls**:
+        *   **`m`**: Toggle **Lifetime** / **Session** mode.
+
 **Usage:**
 ```bash
 wtfpulse tui

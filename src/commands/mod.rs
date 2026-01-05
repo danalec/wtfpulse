@@ -12,6 +12,7 @@ pub mod heatmap;
 pub mod monitor;
 pub mod pulses;
 pub mod raw;
+pub mod scroll_tower;
 pub mod tui;
 pub mod user;
 
