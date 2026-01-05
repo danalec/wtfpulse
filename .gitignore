@@ -4,3 +4,6 @@ Cargo.lock
 .env
 .trae
 wtfpulse.log
+release/
+flake.lock
+flake.nix
