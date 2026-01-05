@@ -434,7 +434,7 @@ fn build_ansi_layout(map: &str) -> Vec<KeyParams> {
     keys
 }
 
-fn get_api_key_from_char(c: char) -> String {
+pub fn get_api_key_from_char(c: char) -> String {
     match c.to_ascii_uppercase() {
         // Alphanumeric - these are already uppercase from to_ascii_uppercase
         'A'..='Z' => c.to_ascii_uppercase().to_string(),

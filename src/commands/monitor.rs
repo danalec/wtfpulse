@@ -45,12 +45,15 @@ struct WpWebSocketMsg {
     data: Option<WpDataResponse>,
 }
 
+use std::collections::HashMap;
+
 #[derive(Deserialize, Debug)]
 struct WpDataResponse {
     #[serde(rename = "account-totals")]
     _account_totals: Option<serde_json::Value>,
     realtime: Option<WpRealtime>,
     unpulsed: Option<WpUnpulsed>,
+    heatmap: Option<HashMap<String, u64>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -125,14 +128,7 @@ pub async fn spawn_monitor_task(
     tx: tokio::sync::mpsc::Sender<Action>,
     mut rx_cmd: tokio::sync::mpsc::Receiver<MonitorCommand>,
 ) {
-    // Send initial status
-    // let _ = tx.send(Action::DebugInfo("Monitor Task Started...".to_string())).await;
-
-    // Use 127.0.0.1 to avoid localhost IPv6 resolution issues on Windows
     let url = url::Url::parse("ws://127.0.0.1:3489").unwrap();
-    // let mut last_keys = 0;
-    // let mut last_time = Instant::now();
-
     loop {
         // let _ = tx.send(Action::DebugInfo(format!("Connecting to {}...", url))).await;
         match connect_async(url.to_string()).await {
@@ -157,8 +153,6 @@ pub async fn spawn_monitor_task(
                         ))
                         .await;
                 }
-
-                // let mut first_msg = true; // No longer needed if we trust the API's KPS or calc from unpulsed
 
                 loop {
                     tokio::select! {
@@ -192,12 +186,16 @@ pub async fn spawn_monitor_task(
                                                     // We can update last_time/last_keys if we want to verify KPS,
                                                     // but let's trust the API for now or use unpulsed for accumulated work.
 
+                                                    // Parse Heatmap
+                                                    let heatmap = data.heatmap.unwrap_or_default();
+
                                                     // Update TUI
                                                     let _ = tx.send(Action::RealtimeUpdate(RealtimeData {
                                                         unpulsed_keys: keys,
                                                         unpulsed_clicks: clicks,
                                                         unpulsed_scrolls: scrolls,
                                                         keys_per_second: kps,
+                                                        heatmap,
                                                     })).await;
                                                 }
                                             } else {

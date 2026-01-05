@@ -1,18 +1,12 @@
-use crate::key_mapping::map_key_id_to_name;
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{Duration, Local};
-use log::{debug, info, warn};
+use log::debug;
 use reqwest::Client;
-use rusqlite::Connection;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use tokio::task;
 
-/// WhatPulse Web API client using bearer authentication.
 #[derive(Clone)]
 pub struct WhatpulseClient {
     client: Client,
@@ -23,14 +17,7 @@ pub struct WhatpulseClient {
 
 impl WhatpulseClient {
     pub async fn new(api_key: &str) -> Result<Self> {
-        // Parse user ID from JWT (middle part) if possible
-        // New API keys might be opaque, but we'll try to extract ID.
-        // If the key is not a JWT, we might need another way to get the ID.
-        // For now, we assume the key structure allows extraction or we fail.
-        let user_id = Self::extract_user_id(api_key).unwrap_or_else(|_| {
-            // Fallback: If we can't extract, we use "me" and rely on /user endpoints.
-            "me".to_string()
-        });
+        let user_id = Self::extract_user_id(api_key).unwrap_or_else(|_| "me".to_string());
 
         use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 
@@ -97,8 +84,6 @@ impl WhatpulseClient {
         self.is_local
     }
 
-    // -- Typed API Methods --
-
     pub async fn get_user(&self) -> Result<UserResponse> {
         if self.is_local {
             return self.get_user_local().await;
@@ -110,7 +95,7 @@ impl WhatpulseClient {
 
     pub async fn get_pulses(&self) -> Result<Vec<PulseResponse>> {
         if self.is_local {
-            return Ok(Vec::new()); // Local API doesn't support history
+            return Ok(Vec::new());
         }
         let url = format!("/users/{}/pulses", self._user_id);
         let wrapper = self.get_json::<PulseListResponse>(&url).await?;
@@ -122,20 +107,13 @@ impl WhatpulseClient {
             return Ok(Vec::new());
         }
         let url = format!("/users/{}/computers", self._user_id);
-        // Assuming ComputerListResponse is just a wrapper, or directly list?
-        // Let's assume list for now based on other patterns, or check ComputerListResponse definition.
-        // If the API returns { computers: [...] }, we need to keep ComputerListResponse but remove ApiResponse wrapper.
         let resp = self.get_json::<ComputerListResponse>(&url).await?;
         Ok(resp.computers)
     }
 
-    // -- Internal Helpers --
-
     async fn get_user_local(&self) -> Result<UserResponse> {
         let url = format!("{}/v1/account-totals", self.base_url);
         let val = self.get_json::<Value>(&url).await?;
-
-        // Map Local API format to New Web API format
         let keys = val
             .get("keys")
             .and_then(|v| v.as_str())
@@ -208,14 +186,10 @@ impl WhatpulseClient {
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = if path.starts_with("http") {
             path.to_string()
+        } else if !path.starts_with('/') {
+            format!("{}/{}", self.base_url, path)
         } else {
-            // Ensure path starts with / if base_url doesn't end with /
-            // New API base_url: https://whatpulse.org/api/v1 (no trailing slash)
-            if !path.starts_with('/') {
-                format!("{}/{}", self.base_url, path)
-            } else {
-                format!("{}{}", self.base_url, path)
-            }
+            format!("{}{}", self.base_url, path)
         };
 
         debug!("Requesting JSON from: {}", url);
@@ -248,119 +222,11 @@ impl WhatpulseClient {
             .with_context(|| format!("failed to parse JSON from {}: {}", url, text))
     }
 
-    pub async fn get_heatmap(&self, period: &str) -> Result<(HashMap<String, u64>, String)> {
-        // WhatPulse Public API does not expose a Heatmap endpoint (JSON).
-        // We must rely on the local SQLite database for this data.
-
-        if self.is_local {
-            let map = self.get_heatmap_from_db(period).await?;
-            return Ok((map, "Local DB".to_string()));
-        }
-
-        // Even if in API mode, we fallback to Local DB because API doesn't exist for this.
-        match self.get_heatmap_from_db(period).await {
-            Ok(db_map) => Ok((db_map, "Local DB (API)".to_string())),
-            Err(e) => Err(e.context("Failed to load Heatmap from Local DB (API)")),
-        }
-    }
-
-    async fn get_heatmap_from_db(&self, period: &str) -> Result<HashMap<String, u64>> {
-        // Use LOCALAPPDATA environment variable
-        let local_app_data = std::env::var("LOCALAPPDATA")
-            .unwrap_or_else(|_| r"C:\Users\danalec\AppData\Local".to_string());
-
-        let path = PathBuf::from(local_app_data)
-            .join("WhatPulse")
-            .join("whatpulse.db");
-
-        if !path.exists() {
-            return Err(anyhow!("Local WhatPulse database not found at {:?}", path));
-        }
-
-        let period_owned = period.to_string();
-
-        task::spawn_blocking(move || {
-            let conn = Connection::open(&path)
-                .context(format!("failed to open local database at {:?}", path))?;
-
-            let (where_clause, param) = match period_owned.as_str() {
-                "today" => {
-                    let d = Local::now().format("%Y-%m-%d").to_string();
-                    ("WHERE day = ?", Some(d))
-                }
-                "yesterday" => {
-                    let d = (Local::now() - Duration::days(1))
-                        .format("%Y-%m-%d")
-                        .to_string();
-                    ("WHERE day = ?", Some(d))
-                }
-                "week" => {
-                    let d = (Local::now() - Duration::days(7))
-                        .format("%Y-%m-%d")
-                        .to_string();
-                    ("WHERE day >= ?", Some(d))
-                }
-                "month" => {
-                    let d = (Local::now() - Duration::days(30))
-                        .format("%Y-%m-%d")
-                        .to_string();
-                    ("WHERE day >= ?", Some(d))
-                }
-                "year" => {
-                    let d = (Local::now() - Duration::days(365))
-                        .format("%Y-%m-%d")
-                        .to_string();
-                    ("WHERE day >= ?", Some(d))
-                }
-                _ => ("", None),
-            };
-
-            let sql = format!(
-                "SELECT key, sum(count) as total FROM keypress_frequency {} GROUP BY key",
-                where_clause
-            );
-            let mut stmt = conn.prepare(&sql)?;
-
-            let params: Vec<&dyn rusqlite::ToSql> = if let Some(ref p) = param {
-                vec![p]
-            } else {
-                vec![]
-            };
-
-            let rows = stmt.query_map(rusqlite::params_from_iter(params), |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-            })?;
-
-            let mut map = HashMap::new();
-            let mut row_count = 0;
-            for (key_id, count) in rows.flatten() {
-                let key_name = map_key_id_to_name(key_id);
-                *map.entry(key_name).or_insert(0) += count as u64;
-                row_count += 1;
-            }
-
-            if map.is_empty() {
-                // Don't error out if no data for a specific period, just return empty map + warning log
-                warn!(
-                    "Local DB returned no heatmap data from {:?} for period {}. Row count: {}",
-                    path, period_owned, row_count
-                );
-            } else {
-                info!(
-                    "Loaded {} keys from local DB at {:?} for period {}.",
-                    map.len(),
-                    path,
-                    period_owned
-                );
-            }
-
-            Ok(map)
-        })
-        .await?
+    pub async fn get_heatmap(&self, _period: &str) -> Result<(HashMap<String, u64>, String)> {
+        let map = HashMap::new();
+        Ok((map, "Session Mode".to_string()))
     }
 }
-
-// -- API Response Structs --
 
 #[derive(Debug, Deserialize)]
 struct UserWrapper {

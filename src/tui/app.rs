@@ -2,6 +2,7 @@ use crate::client::{ComputerResponse, PulseResponse, UserResponse, WhatpulseClie
 use crate::commands::calorimetry::{EnergyStats, SwitchProfile, calculate_energy};
 use crate::commands::get_pages;
 use crate::commands::heatmap::layouts::KeyboardLayout;
+use crate::commands::heatmap::layouts::get_api_key_from_char;
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -109,6 +110,7 @@ pub struct RealtimeData {
     pub unpulsed_clicks: i64,
     pub unpulsed_scrolls: i64,
     pub keys_per_second: f64,
+    pub heatmap: HashMap<String, u64>,
 }
 
 pub enum Action {
@@ -226,6 +228,7 @@ pub struct App {
     pub scroll_mode: ScrollMode,
     pub session_start_scrolls: Option<u64>,
     pub current_total_scrolls: u64,
+    pub session_heatmap: HashMap<String, u64>,
 }
 
 impl App {
@@ -267,6 +270,7 @@ impl App {
             scroll_mode: ScrollMode::default(),
             session_start_scrolls: None,
             current_total_scrolls: 0,
+            session_heatmap: HashMap::new(),
         }
     }
 
@@ -311,6 +315,20 @@ impl App {
                 spawn_fetch(self.client.clone(), self.tx.clone());
             }
             Action::Key(key) => {
+                // Update Session Heatmap from TUI inputs
+                let key_str = match key.code {
+                    KeyCode::Char(c) => Some(get_api_key_from_char(c)),
+                    KeyCode::Enter => Some("RETURN".to_string()),
+                    KeyCode::Backspace => Some("BACKSPACE".to_string()),
+                    KeyCode::Tab => Some("TAB".to_string()),
+                    KeyCode::Esc => Some("ESCAPE".to_string()),
+                    KeyCode::Delete => Some("DELETE".to_string()),
+                    _ => None,
+                };
+                if let Some(k) = key_str {
+                    *self.session_heatmap.entry(k).or_insert(0) += 1;
+                }
+
                 let pages = get_pages();
 
                 // Let the current page handle the key first
@@ -432,6 +450,11 @@ impl App {
             Action::RealtimeUpdate(data) => {
                 let profile = self.profiles[self.profile_index].clone();
                 let _ = self.kinetic_stats.update(&data, &profile);
+
+                // Update Session Heatmap
+                if !data.heatmap.is_empty() {
+                    self.session_heatmap = data.heatmap.clone();
+                }
 
                 // Update Scroll Meters with absolute total (User Baseline + Unpulsed)
                 // 1 tick = 0.016 meters (1.6 cm)
@@ -582,6 +605,7 @@ mod tests {
             unpulsed_clicks: 0,
             unpulsed_scrolls: 0,
             keys_per_second: 5.0,
+            heatmap: HashMap::new(),
         };
         stats.update(&data1, &profile);
 
@@ -599,6 +623,7 @@ mod tests {
             unpulsed_clicks: 0,
             unpulsed_scrolls: 0,
             keys_per_second: 5.0,
+            heatmap: HashMap::new(),
         };
         stats.update(&data2, &profile);
 

@@ -304,8 +304,12 @@ fn render_statistics(f: &mut Frame, area: Rect) {
 }
 
 fn render_keyboard(f: &mut Frame, app: &App, area: Rect) {
-    // Use cached data
-    let data = &app.heatmap_data;
+    // Combine API data with session data
+    let mut data = app.heatmap_data.clone();
+    for (k, v) in &app.session_heatmap {
+        *data.entry(k.clone()).or_insert(0) += v;
+    }
+
     let max_count = data.values().max().copied().unwrap_or(1);
 
     // Center the keyboard in the available area
@@ -405,17 +409,24 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         // Show Status
         let map_len = app.heatmap_data.len();
         let max_val = app.heatmap_data.values().max().copied().unwrap_or(0);
+        let session_len = app.session_heatmap.len();
+        let session_max = app.session_heatmap.values().max().copied().unwrap_or(0);
 
         // Show full source string (includes error if fallback occurred)
         let source_str = &app.data_source;
 
         let status_text = if log::max_level() >= log::LevelFilter::Debug {
             format!(
-                "Source: {} | Keys: {} | Max: {}",
-                source_str, map_len, max_val
+                "Source: {} | Keys: {} (S: {}) | Max: {} (S: {})",
+                source_str, map_len, session_len, max_val, session_max
             )
         } else {
-            format!("Keys: {} | Max: {}", map_len, max_val)
+            format!(
+                "Keys: {} (+{}) | Max: {}",
+                map_len,
+                session_len,
+                max_val.max(session_max)
+            )
         };
         let p_status = Paragraph::new(status_text)
             .style(Style::default().fg(Color::DarkGray))
