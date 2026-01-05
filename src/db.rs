@@ -2,6 +2,13 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
 use std::collections::HashMap;
 use std::path::PathBuf;
+#[derive(Debug, Default, Clone)]
+pub struct MouseStats {
+    pub clicks: u64,
+    pub scrolls: u64,
+    pub distance_meters: f64,
+    pub clicks_by_button: HashMap<i64, u64>,
+}
 
 pub struct Database {
     path: PathBuf,
@@ -34,18 +41,80 @@ impl Database {
             .context("Failed to open database")
     }
 
+    pub fn get_mouse_stats(&self, period: &str) -> Result<MouseStats> {
+        let conn = self.get_connection()?;
+        let where_clause = self.get_where_clause(period);
+
+        // Total Clicks
+        let sql_clicks = format!("SELECT SUM(count) FROM mouseclicks {}", where_clause);
+        let clicks: i64 = conn
+            .query_row(&sql_clicks, [], |row| row.get(0))
+            .unwrap_or(0);
+
+        // Total Scrolls
+        let sql_scrolls = format!("SELECT SUM(count) FROM mousescrolls {}", where_clause);
+        let scrolls: i64 = conn
+            .query_row(&sql_scrolls, [], |row| row.get(0))
+            .unwrap_or(0);
+
+        // Total Distance
+        let sql_distance = format!(
+            "SELECT SUM(distance_inches) FROM mousedistance {}",
+            where_clause
+        );
+        let distance_inches: f64 = conn
+            .query_row(&sql_distance, [], |row| row.get(0))
+            .unwrap_or(0.0);
+
+        // Clicks by Button
+        let sql_buttons = format!(
+            "SELECT button, SUM(count) FROM mouseclicks_frequency {} GROUP BY button",
+            where_clause
+        );
+        let mut stmt = conn.prepare(&sql_buttons)?;
+        let rows = stmt.query_map([], |row| {
+            let button: i64 = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            Ok((button, count))
+        })?;
+
+        let mut clicks_by_button = HashMap::new();
+        for row in rows {
+            let (button, count) = row?;
+            clicks_by_button.insert(button, count as u64);
+        }
+
+        Ok(MouseStats {
+            clicks: clicks as u64,
+            scrolls: scrolls as u64,
+            distance_meters: distance_inches * 0.0254,
+            clicks_by_button,
+        })
+    }
+
+    fn get_where_clause(&self, period: &str) -> String {
+        match period {
+            "today" => "WHERE day = date('now', 'localtime')".to_string(),
+            "yesterday" => "WHERE day = date('now', 'localtime', '-1 day')".to_string(),
+            "week" => "WHERE day >= date('now', 'localtime', '-7 days')".to_string(),
+            "month" => "WHERE day >= date('now', 'localtime', '-1 month')".to_string(),
+            "year" => "WHERE day >= date('now', 'localtime', '-1 year')".to_string(),
+            "all" => "WHERE 1=1".to_string(),
+            p if p.starts_with("custom:") => {
+                let parts: Vec<&str> = p.split(':').collect();
+                if parts.len() == 3 {
+                    format!("WHERE day >= '{}' AND day <= '{}'", parts[1], parts[2])
+                } else {
+                    "WHERE 1=1".to_string()
+                }
+            }
+            _ => "WHERE 1=1".to_string(),
+        }
+    }
+
     pub fn get_heatmap_stats(&self, period: &str) -> Result<HashMap<String, u64>> {
         let conn = self.get_connection()?;
-
-        let where_clause = match period {
-            "today" => "WHERE day = date('now', 'localtime')",
-            "yesterday" => "WHERE day = date('now', 'localtime', '-1 day')",
-            "week" => "WHERE day >= date('now', 'localtime', '-7 days')",
-            "month" => "WHERE day >= date('now', 'localtime', '-1 month')",
-            "year" => "WHERE day >= date('now', 'localtime', '-1 year')",
-            "all" => "WHERE 1=1",
-            _ => "WHERE 1=1",
-        };
+        let where_clause = self.get_where_clause(period);
 
         let sql = format!(
             "SELECT key, SUM(count) as total_count FROM keypress_frequency {} GROUP BY key",
@@ -70,6 +139,26 @@ impl Database {
         Ok(map)
     }
 
+    pub fn get_mouse_points(&self, period: &str) -> Result<Vec<(f64, f64)>> {
+        let conn = self.get_connection()?;
+        let where_clause = self.get_where_clause(period);
+
+        let sql = format!("SELECT x, y FROM mousepoints {}", where_clause);
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| {
+            let x: f64 = row.get(0)?;
+            let y: f64 = row.get(1)?;
+            Ok((x, y))
+        })?;
+
+        let mut points = Vec::new();
+        for row in rows {
+            points.push(row?);
+        }
+        Ok(points)
+    }
+
     pub fn debug_tables(&self) -> Result<Vec<String>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table'")?;
@@ -90,21 +179,40 @@ mod tests {
     #[test]
     fn test_list_tables() {
         let db = Database::new().unwrap();
-        // Inspect keypress_frequency data
         let conn = db.get_connection().unwrap();
-        // println!("--- Sample Data from keypress_frequency ---");
+
+        // Check tables
         let mut stmt = conn
-            .prepare("SELECT day, hour, key, count, profile_id FROM keypress_frequency LIMIT 1")
+            .prepare("SELECT name FROM sqlite_master WHERE type='table'")
             .unwrap();
-        let _rows = stmt
-            .query_map([], |row| {
-                let day: String = row.get(0)?;
-                let hour: i32 = row.get(1)?;
-                let key: i32 = row.get(2)?;
-                let count: i64 = row.get(3)?;
-                Ok((day, hour, key, count))
+        let tables = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
+
+        println!("Tables:");
+        for table in tables {
+            println!("- {}", table.unwrap());
+        }
+
+        // Check keypress frequency
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM keypress_frequency", [], |row| {
+                row.get(0)
             })
-            .unwrap();
+            .unwrap_or(0);
+        println!("Total rows in keypress_frequency: {}", count);
+
+        // Check mousepoints using new function
+        match db.get_mouse_points("all") {
+            Ok(points) => {
+                println!("Total mouse points fetched: {}", points.len());
+                if !points.is_empty() {
+                    println!("First 5 points: {:?}", &points[0..5.min(points.len())]);
+                }
+            }
+            Err(e) => {
+                println!("Error fetching mouse points: {}", e);
+                // Don't fail the test if table doesn't exist or is empty, just log
+            }
+        }
     }
 
     #[test]
@@ -116,5 +224,39 @@ mod tests {
             !stats.is_empty(),
             "Heatmap stats should not be empty for 'all' period"
         );
+    }
+
+    #[test]
+    fn test_inspect_tables() {
+        let db = Database::new().unwrap();
+        let conn = db.get_connection().unwrap();
+
+        let tables = vec![
+            "mouseclicks",
+            "mouseclicks_frequency",
+            "mousescrolls",
+            "mousedistance",
+            "pulses",
+            "account_pulses",
+        ];
+
+        for table in tables {
+            println!("--- Schema for {} ---", table);
+            let mut stmt = conn
+                .prepare(&format!("PRAGMA table_info({})", table))
+                .unwrap();
+            let rows = stmt
+                .query_map([], |row| {
+                    let _cid: i64 = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    let type_: String = row.get(2)?;
+                    Ok(format!("{}: {}", name, type_))
+                })
+                .unwrap();
+
+            for row in rows {
+                println!("{}", row.unwrap());
+            }
+        }
     }
 }

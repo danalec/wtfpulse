@@ -149,6 +149,7 @@ inventory::submit! {
         title: "Scroll Tower",
         render,
         handle_key,
+        handle_mouse: crate::commands::default_handle_mouse,
         priority: 16,
     }
 }

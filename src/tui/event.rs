@@ -18,6 +18,9 @@ pub fn start_event_listener(tx: mpsc::Sender<Action>) {
                     Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                         let _ = tx.blocking_send(Action::Key(key));
                     }
+                    Ok(Event::Mouse(mouse)) => {
+                        let _ = tx.blocking_send(Action::Mouse(mouse));
+                    }
                     _ => {}
                 }
             }

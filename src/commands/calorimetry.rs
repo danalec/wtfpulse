@@ -22,6 +22,7 @@ inventory::submit! {
         title: "Calorimetry",
         render: render_tui,
         handle_key,
+        handle_mouse: crate::commands::default_handle_mouse,
         priority: 20,
     }
 }

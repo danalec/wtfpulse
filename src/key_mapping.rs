@@ -1,5 +1,25 @@
 pub fn map_key_id_to_name(id: i64) -> String {
     match id {
+        // Qt Key Codes (WhatPulse uses these)
+        16777216 => "ESCAPE".to_string(),
+        16777217 => "TAB".to_string(),
+        16777219 => "BACKSPACE".to_string(),
+        16777220 => "RETURN".to_string(),
+        16777221 => "ENTER".to_string(),
+        16777222 => "INSERT".to_string(),
+        16777223 => "DELETE".to_string(),
+        16777232 => "HOME".to_string(),
+        16777233 => "END".to_string(),
+        16777234 => "LEFT".to_string(),
+        16777235 => "UP".to_string(),
+        16777236 => "RIGHT".to_string(),
+        16777237 => "DOWN".to_string(),
+        16777238 => "PAGEUP".to_string(),
+        16777239 => "PAGEDOWN".to_string(),
+        16777252 => "CAPSLOCK".to_string(),
+        16777264..=16777275 => format!("F{}", id - 16777263), // F1-F12
+
+        // Legacy / ASCII mappings
         8 => "BACKSPACE".to_string(),
         9 => "TAB".to_string(),
         13 => "RETURN".to_string(),

@@ -8,8 +8,9 @@ use ratatui::layout::Rect;
 
 pub mod calorimetry;
 pub mod computers;
-pub mod heatmap;
+pub mod keyboard;
 pub mod monitor;
+pub mod mouse;
 pub mod pulses;
 pub mod raw;
 pub mod scroll_tower;
@@ -20,6 +21,7 @@ pub struct TuiPage {
     pub title: &'static str,
     pub render: fn(&mut Frame, &App, Rect),
     pub handle_key: fn(&mut App, KeyEvent) -> bool,
+    pub handle_mouse: fn(&mut App, crossterm::event::MouseEvent) -> bool,
     pub priority: usize,
 }
 
@@ -29,6 +31,10 @@ pub fn get_pages() -> Vec<&'static TuiPage> {
     let mut pages: Vec<&'static TuiPage> = inventory::iter::<TuiPage>.into_iter().collect();
     pages.sort_by_key(|p| p.priority);
     pages
+}
+
+pub fn default_handle_mouse(_app: &mut App, _event: crossterm::event::MouseEvent) -> bool {
+    false
 }
 
 #[derive(Subcommand)]

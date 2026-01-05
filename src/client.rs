@@ -97,9 +97,28 @@ impl WhatpulseClient {
         if self.is_local {
             return Ok(Vec::new());
         }
-        let url = format!("/users/{}/pulses", self._user_id);
-        let wrapper = self.get_json::<PulseListResponse>(&url).await?;
-        Ok(wrapper.pulses)
+
+        let mut all_pulses = Vec::new();
+        let mut current_url = Some(format!("/users/{}/pulses?per_page=100", self._user_id));
+        let mut page_count = 0;
+
+        while let Some(url) = current_url {
+            let wrapper = self.get_json::<PulseListResponse>(&url).await?;
+            all_pulses.extend(wrapper.pulses);
+
+            current_url = wrapper.links.and_then(|l| l.next);
+
+            // Be a good citizen: yield and sleep slightly between pages
+            // This prevents hammering the API in a tight loop
+            page_count += 1;
+            if page_count % 5 == 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            } else {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+
+        Ok(all_pulses)
     }
 
     pub async fn get_computers(&self) -> Result<Vec<ComputerResponse>> {
@@ -194,15 +213,66 @@ impl WhatpulseClient {
 
         debug!("Requesting JSON from: {}", url);
 
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .with_context(|| format!("request failed: GET {}", url))?;
+        let max_retries = 3;
+        let mut retry_count = 0;
+        let mut backoff_ms = 1000; // 1 second start
 
-        let status = resp.status();
-        if !status.is_success() {
+        loop {
+            // We need to clone the request builder or build it new each time?
+            // Client is reusable, so we build the request each iteration.
+            let resp = self
+                .client
+                .get(&url)
+                .send()
+                .await
+                .with_context(|| format!("request failed: GET {}", url))?;
+
+            let status = resp.status();
+            if status.is_success() {
+                let text = resp
+                    .text()
+                    .await
+                    .with_context(|| format!("failed to read text from {}", url))?;
+                return serde_json::from_str::<T>(&text)
+                    .with_context(|| format!("failed to parse JSON from {}: {}", url, text));
+            }
+
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                if retry_count >= max_retries {
+                    let text = resp.text().await.unwrap_or_default();
+                    return Err(anyhow!(
+                        "API Error {}: Too many requests (rate limit exceeded). Body: {}",
+                        status,
+                        text
+                    ));
+                }
+
+                // Parse Retry-After if available (seconds), otherwise exponential backoff
+                let wait_ms =
+                    if let Some(retry_after) = resp.headers().get(reqwest::header::RETRY_AFTER) {
+                        retry_after
+                            .to_str()
+                            .ok()
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .map(|s| s * 1000) // Convert seconds to ms
+                            .unwrap_or(backoff_ms)
+                    } else {
+                        backoff_ms
+                    };
+
+                debug!(
+                    "Rate limited. Waiting {}ms before retry {}/{}",
+                    wait_ms,
+                    retry_count + 1,
+                    max_retries
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
+
+                retry_count += 1;
+                backoff_ms *= 2; // Exponential backoff
+                continue;
+            }
+
             let text = resp.text().await.unwrap_or_default();
             // Truncate if too long or HTML
             let error_msg =
@@ -213,13 +283,6 @@ impl WhatpulseClient {
                 };
             return Err(anyhow!("API Error {}: {}", status, error_msg));
         }
-
-        let text = resp
-            .text()
-            .await
-            .with_context(|| format!("failed to read text from {}", url))?;
-        serde_json::from_str::<T>(&text)
-            .with_context(|| format!("failed to parse JSON from {}: {}", url, text))
     }
 
     pub async fn get_heatmap(&self, period: &str) -> Result<(HashMap<String, u64>, String)> {
@@ -232,6 +295,82 @@ impl WhatpulseClient {
         .await??;
 
         Ok((map, "Local DB".to_string()))
+    }
+
+    pub async fn get_screen_heatmap(&self, period: &str) -> Result<Vec<Vec<u64>>> {
+        let period_owned = period.to_string();
+
+        let grid = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<u64>>> {
+            let db = crate::db::Database::new()?;
+            let points = db.get_mouse_points(&period_owned)?;
+
+            if points.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let mut min_x = f64::MAX;
+            let mut max_x = f64::MIN;
+            let mut min_y = f64::MAX;
+            let mut max_y = f64::MIN;
+
+            for (x, y) in &points {
+                if *x < min_x {
+                    min_x = *x;
+                }
+                if *x > max_x {
+                    max_x = *x;
+                }
+                if *y < min_y {
+                    min_y = *y;
+                }
+                if *y > max_y {
+                    max_y = *y;
+                }
+            }
+
+            // Heuristic: If values are normalized (0.0-1.0), use 0-1 bounds to preserve screen context
+            // Otherwise use observed bounds (auto-zoom)
+            let is_normalized = min_x >= 0.0 && max_x <= 1.0 && min_y >= 0.0 && max_y <= 1.0;
+
+            let (use_min_x, use_max_x, use_min_y, use_max_y) = if is_normalized {
+                (0.0, 1.0, 0.0, 1.0)
+            } else {
+                (min_x, max_x, min_y, max_y)
+            };
+
+            // Grid size: 320x200 (approx VGA resolution, good for TUI)
+            let grid_w = 320;
+            let grid_h = 200;
+            let mut grid = vec![vec![0u64; grid_w]; grid_h];
+
+            let width = use_max_x - use_min_x;
+            let height = use_max_y - use_min_y;
+
+            if width <= 0.0 || height <= 0.0 {
+                return Ok(grid);
+            }
+
+            for (x, y) in points {
+                let norm_x = (x - use_min_x) / width;
+                let norm_y = (y - use_min_y) / height;
+
+                // Clamp to [0, 1] just in case floating point errors or outlier if not normalized
+                let norm_x = norm_x.clamp(0.0, 1.0);
+                let norm_y = norm_y.clamp(0.0, 1.0);
+
+                let gx = (norm_x * (grid_w as f64 - 1.0)).round() as usize;
+                let gy = (norm_y * (grid_h as f64 - 1.0)).round() as usize;
+
+                if gx < grid_w && gy < grid_h {
+                    grid[gy][gx] += 1;
+                }
+            }
+
+            Ok(grid)
+        })
+        .await??;
+
+        Ok(grid)
     }
 }
 

@@ -17,6 +17,7 @@ inventory::submit! {
         title: "Dashboard",
         render: render_tui,
         handle_key,
+        handle_mouse: crate::commands::default_handle_mouse,
         priority: 0,
     }
 }

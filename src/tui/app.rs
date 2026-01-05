@@ -1,8 +1,9 @@
 use crate::client::{ComputerResponse, PulseResponse, UserResponse, WhatpulseClient};
 use crate::commands::calorimetry::{EnergyStats, SwitchProfile, calculate_energy};
 use crate::commands::get_pages;
-use crate::commands::heatmap::layouts::KeyboardLayout;
-use crate::commands::heatmap::layouts::get_api_key_from_char;
+use crate::commands::keyboard::layouts::KeyboardLayout;
+use crate::commands::keyboard::layouts::get_api_key_from_char;
+use crate::db::MouseStats;
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -113,16 +114,28 @@ pub struct RealtimeData {
     pub heatmap: HashMap<String, u64>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ExtendedMouseStats {
+    pub today: MouseStats,
+    pub yesterday: MouseStats,
+    pub all_time: MouseStats,
+    pub unpulsed: MouseStats,
+}
+
 pub enum Action {
     Tick,
     Quit,
     Refresh,
     Key(KeyEvent),
+    Mouse(crossterm::event::MouseEvent),
     UserLoaded(Box<Result<UserResponse>>),
     PulsesLoaded(Result<Vec<PulseResponse>>),
     ComputersLoaded(Result<Vec<ComputerResponse>>),
-    HeatmapLoaded(HashMap<String, u64>, String),
-    HeatmapError(String),
+    KeyboardHeatmapLoaded(HashMap<String, u64>, String),
+    KeyboardHeatmapError(String),
+    MouseHeatmapLoaded(Vec<Vec<u64>>),
+    MouseHeatmapError(String),
+    MouseStatsLoaded(Box<ExtendedMouseStats>),
     WebSocketStatus(bool, Option<String>),
     RealtimeUpdate(RealtimeData),
     DebugInfo(String),
@@ -229,6 +242,11 @@ pub struct App {
     pub session_start_scrolls: Option<u64>,
     pub current_total_scrolls: u64,
     pub session_heatmap: HashMap<String, u64>,
+    pub screen_heatmap_data: Vec<Vec<u64>>,
+    pub mouse_stats: ExtendedMouseStats,
+    pub show_mouse_stats: bool,
+    pub mouse_period: TimePeriod,
+    pub pulses_table_state: RefCell<ratatui::widgets::TableState>,
 }
 
 impl App {
@@ -271,6 +289,11 @@ impl App {
             session_start_scrolls: None,
             current_total_scrolls: 0,
             session_heatmap: HashMap::new(),
+            screen_heatmap_data: Vec::new(),
+            mouse_stats: ExtendedMouseStats::default(),
+            show_mouse_stats: false,
+            mouse_period: TimePeriod::Today,
+            pulses_table_state: RefCell::new(ratatui::widgets::TableState::default()),
         }
     }
 
@@ -301,6 +324,34 @@ impl App {
         }
     }
 
+    pub fn recalculate_unpulsed(&mut self) {
+        if let Some(user) = &self.user_stats {
+            // Unpulsed Clicks = AllTime.Clicks - User.Totals.Clicks
+            let total_clicks = self.mouse_stats.all_time.clicks;
+            let pulsed_clicks = user.totals.clicks.unwrap_or(0);
+            let unpulsed_clicks = total_clicks.saturating_sub(pulsed_clicks);
+
+            // Unpulsed Scrolls = AllTime.Scrolls - User.Totals.Scrolls
+            let total_scrolls = self.mouse_stats.all_time.scrolls;
+            let pulsed_scrolls = user.totals.scrolls;
+            let unpulsed_scrolls = total_scrolls.saturating_sub(pulsed_scrolls);
+
+            // Unpulsed Distance = AllTime.DistanceMeters - (User.Totals.DistanceMiles * 1609.34)
+            let total_distance_meters = self.mouse_stats.all_time.distance_meters;
+            let pulsed_distance_miles = user.totals.distance_miles.unwrap_or(0.0);
+            let pulsed_distance_meters = pulsed_distance_miles * 1609.34;
+            let unpulsed_distance_meters =
+                (total_distance_meters - pulsed_distance_meters).max(0.0);
+
+            self.mouse_stats.unpulsed = MouseStats {
+                clicks: unpulsed_clicks,
+                scrolls: unpulsed_scrolls,
+                distance_meters: unpulsed_distance_meters,
+                clicks_by_button: HashMap::new(),
+            };
+        }
+    }
+
     pub async fn update(&mut self, action: Action) -> bool {
         match action {
             Action::Quit => {
@@ -323,6 +374,15 @@ impl App {
                     KeyCode::Tab => Some("TAB".to_string()),
                     KeyCode::Esc => Some("ESCAPE".to_string()),
                     KeyCode::Delete => Some("DELETE".to_string()),
+                    KeyCode::Insert => Some("INSERT".to_string()),
+                    KeyCode::Home => Some("HOME".to_string()),
+                    KeyCode::End => Some("END".to_string()),
+                    KeyCode::PageUp => Some("PAGEUP".to_string()),
+                    KeyCode::PageDown => Some("PAGEDOWN".to_string()),
+                    KeyCode::Left => Some("LEFT".to_string()),
+                    KeyCode::Right => Some("RIGHT".to_string()),
+                    KeyCode::Up => Some("UP".to_string()),
+                    KeyCode::Down => Some("DOWN".to_string()),
                     _ => None,
                 };
                 if let Some(k) = key_str {
@@ -393,6 +453,12 @@ impl App {
                     }
                 }
             }
+            Action::Mouse(mouse) => {
+                let pages = get_pages();
+                if let Some(page) = pages.get(self.current_tab) {
+                    let _ = (page.handle_mouse)(self, mouse);
+                }
+            }
             Action::UserLoaded(res) => {
                 self.user_loading = false;
                 match *res {
@@ -400,6 +466,7 @@ impl App {
                         self.user_stats = Some(user);
                         self.error = None;
                         self.recalculate_energy();
+                        self.recalculate_unpulsed();
                     }
                     Err(e) => {
                         self.error = Some(e.to_string());
@@ -431,17 +498,29 @@ impl App {
                     }
                 }
             }
-            Action::HeatmapLoaded(map, source) => {
+            Action::KeyboardHeatmapLoaded(map, source) => {
                 info!("Heatmap loaded with {} keys from {}", map.len(), source);
                 self.heatmap_data = map;
                 self.error = None;
                 self.heatmap_error = None;
                 self.data_source = source;
             }
-            Action::HeatmapError(e) => {
+            Action::KeyboardHeatmapError(e) => {
                 self.error = Some(e.clone());
                 self.heatmap_error = Some(e);
                 self.data_source = "Error".to_string();
+            }
+            Action::MouseHeatmapLoaded(grid) => {
+                info!("Screen Heatmap loaded with {} rows", grid.len());
+                self.screen_heatmap_data = grid;
+                self.error = None;
+            }
+            Action::MouseHeatmapError(e) => {
+                self.error = Some(e);
+            }
+            Action::MouseStatsLoaded(stats) => {
+                self.mouse_stats = *stats;
+                self.recalculate_unpulsed();
             }
             Action::WebSocketStatus(connected, error) => {
                 self.kinetic_stats.is_connected = connected;
@@ -563,24 +642,97 @@ pub fn spawn_fetch(client: WhatpulseClient, tx: mpsc::Sender<Action>) {
     tokio::spawn(async move {
         match client_heatmap.get_heatmap("all").await {
             Ok((map, source)) => {
-                let _ = tx_heatmap.send(Action::HeatmapLoaded(map, source)).await;
+                let _ = tx_heatmap
+                    .send(Action::KeyboardHeatmapLoaded(map, source))
+                    .await;
             }
             Err(e) => {
-                let _ = tx_heatmap.send(Action::HeatmapError(e.to_string())).await;
+                let _ = tx_heatmap
+                    .send(Action::KeyboardHeatmapError(e.to_string()))
+                    .await;
+            }
+        }
+    });
+
+    // Initial Screen Heatmap Fetch (Today)
+    let tx_screen = tx.clone();
+    let client_screen = client.clone();
+    tokio::spawn(async move {
+        match client_screen.get_screen_heatmap("today").await {
+            Ok(grid) => {
+                let _ = tx_screen.send(Action::MouseHeatmapLoaded(grid)).await;
+            }
+            Err(e) => {
+                let _ = tx_screen
+                    .send(Action::MouseHeatmapError(e.to_string()))
+                    .await;
+            }
+        }
+    });
+
+    spawn_fetch_mouse_stats(tx.clone());
+}
+
+pub fn spawn_fetch_mouse_stats(tx: mpsc::Sender<Action>) {
+    let tx_mouse = tx.clone();
+    tokio::spawn(async move {
+        let stats = tokio::task::spawn_blocking(move || -> Result<ExtendedMouseStats> {
+            let db = crate::db::Database::new()?;
+
+            let today = db.get_mouse_stats("today")?;
+            let yesterday = db.get_mouse_stats("yesterday")?;
+            let all_time = db.get_mouse_stats("all")?;
+
+            Ok(ExtendedMouseStats {
+                today,
+                yesterday,
+                all_time,
+                unpulsed: MouseStats::default(),
+            })
+        })
+        .await;
+
+        match stats {
+            Ok(Ok(s)) => {
+                let _ = tx_mouse.send(Action::MouseStatsLoaded(Box::new(s))).await;
+            }
+            Ok(Err(e)) => {
+                log::error!("Failed to fetch mouse stats: {}", e);
+            }
+            Err(e) => {
+                log::error!("Join error fetching mouse stats: {}", e);
             }
         }
     });
 }
 
-pub fn spawn_fetch_heatmap(client: WhatpulseClient, tx: mpsc::Sender<Action>, period: &str) {
+pub fn spawn_fetch_mouse_heatmap(client: WhatpulseClient, tx: mpsc::Sender<Action>, period: &str) {
+    let period = period.to_string();
+    tokio::spawn(async move {
+        match client.get_screen_heatmap(&period).await {
+            Ok(grid) => {
+                let _ = tx.send(Action::MouseHeatmapLoaded(grid)).await;
+            }
+            Err(e) => {
+                let _ = tx.send(Action::MouseHeatmapError(e.to_string())).await;
+            }
+        }
+    });
+}
+
+pub fn spawn_fetch_keyboard_heatmap(
+    client: WhatpulseClient,
+    tx: mpsc::Sender<Action>,
+    period: &str,
+) {
     let period = period.to_string();
     tokio::spawn(async move {
         match client.get_heatmap(&period).await {
             Ok((map, source)) => {
-                let _ = tx.send(Action::HeatmapLoaded(map, source)).await;
+                let _ = tx.send(Action::KeyboardHeatmapLoaded(map, source)).await;
             }
             Err(e) => {
-                let _ = tx.send(Action::HeatmapError(e.to_string())).await;
+                let _ = tx.send(Action::KeyboardHeatmapError(e.to_string())).await;
             }
         }
     });
@@ -630,5 +782,62 @@ mod tests {
         // Work = F * d * Delta(10)
         let expected_work = profile.force_newtons * profile.distance_meters * 10.0;
         assert!((stats.accumulated_work_joules - expected_work).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_recalculate_unpulsed() {
+        let mut app = App::new(
+            crate::client::WhatpulseClient::new_local().unwrap(),
+            tokio::sync::mpsc::channel(1).0,
+        );
+
+        // Mock Mouse Stats (All Time)
+        app.mouse_stats.all_time.clicks = 1000;
+        app.mouse_stats.all_time.scrolls = 500;
+        app.mouse_stats.all_time.distance_meters = 100.0;
+
+        // Mock User Stats (Pulsed)
+        let user = crate::client::UserResponse {
+            id: 1,
+            username: "test".to_string(),
+            date_joined: None,
+            first_pulse_date: None,
+            last_pulse_date: None,
+            pulses: 0,
+            team_id: None,
+            team_is_manager: false,
+            country_id: None,
+            is_premium: false,
+            referrals: 0,
+            last_referral_date: None,
+            avatar: None,
+            totals: crate::client::UserTotals {
+                keys: None,
+                clicks: Some(800),
+                download_mb: None,
+                upload_mb: None,
+                uptime_seconds: None,
+                scrolls: 400,
+                distance_miles: Some(0.05), // 0.05 miles * 1609.34 = 80.467 meters
+            },
+            ranks: None,
+            include_in_rankings: false,
+            distance_system: "metric".to_string(),
+            last_pulse: None,
+        };
+        app.user_stats = Some(user);
+
+        app.recalculate_unpulsed();
+
+        // Check Unpulsed
+        // Clicks: 1000 - 800 = 200
+        assert_eq!(app.mouse_stats.unpulsed.clicks, 200);
+
+        // Scrolls: 500 - 400 = 100
+        assert_eq!(app.mouse_stats.unpulsed.scrolls, 100);
+
+        // Distance: 100.0 - 80.467 = 19.533
+        let expected_dist = 100.0 - (0.05 * 1609.34);
+        assert!((app.mouse_stats.unpulsed.distance_meters - expected_dist).abs() < 1e-3);
     }
 }

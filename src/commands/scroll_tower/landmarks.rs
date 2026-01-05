@@ -87,15 +87,19 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Tech,
         description: "A standard 19-inch rack. Contains 42 units of pure spaghetti cabling.",
         ascii_art: r#"
-       +--------------+
-       |[============]|
-       |[  o  o  o   ]|
-       |[ :: :: :: ::]|
-       |[............]|
-       |[............]|
-       |[............]|
-       |[____________]|
-       +--------------+
+       +------------------+
+       |[  [SWITCH-01]   ]|
+       |[  [ROUTER-01]   ]|
+       |[  [PATCH-PNL]   ]|
+       |[  [SRV-APP01]   ]|
+       |[  [SRV-APP02]   ]|
+       |[  [SRV-DB-01]   ]|
+       |[  [SRV-DB-02]   ]|
+       |[  [STORAGE-1]   ]|
+       |[  [STORAGE-2]   ]|
+       |[  [UPS-MAIN ]   ]|
+       |[________________]|
+       +------------------+
     "#,
     },
     Landmark {
@@ -104,15 +108,25 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Bio,
         description: "The tallest living terrestrial animal. Eats acacias and judges your code.",
         ascii_art: r#"
-             ..
-            //
-           //
-       _\\//_    
-      /  _   \   
-      | | |  |   
-      | | |  |   
-      |_| |_|   
-     //    \\   
+             oo
+            / _
+           / /
+          / /
+         / /
+        / /
+       / /
+      / /
+     / /
+    / /
+   / /
+  / /   _
+ / /  _/ \
+ | | /  _ \
+ | |/  / \ \
+ |    /   \ \
+ |___/     \_\
+  | |       | |
+  | |       | |
     "#,
     },
     Landmark {
@@ -135,11 +149,14 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Structure,
         description: "Not visible from space, but definitely visible in your terminal. (Avg Height)",
         ascii_art: r#"
-           _|_
-         /|___|\
-        |_|   |_|
-       _|_|___|_|_
-      /___________\
+        _   _   _   _   _
+       | |_| |_| |_| |_| |
+      _|                 |_
+     |                     |
+    _|                     |_
+   |_________________________|
+   |  |  |  |  |  |  |  |  |
+   |__|__|__|__|__|__|__|__|
 "#,
     },
     Landmark {
@@ -168,12 +185,18 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Fiction,
         description: "Destroy Mode activated. Hope your scroll wheel is Newtype-compatible.",
         ascii_art: r#"
-           / \
-          (o_o)
-         /|[_]|\
-        / | | | \
-          /   \
-         |__|__|
+             \ /
+           --(_)--
+             / \
+            /| |\
+           /_|_|_\
+          |  |  |
+          |  |  |
+         /|  |  |\
+        / |  |  | \
+       /  |  |  |  \
+      /   |__|__|   \
+     /___/       \___\
 "#,
     },
     Landmark {
@@ -182,12 +205,23 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Bio,
         description: "If you balanced a Blue Whale on its tail. Don't try this at home.",
         ascii_art: r#"
-            .
-           ":"
-         ___:____     |"\/"|
-       ,'        `.    \  /
-      |  O        \___/  |
-    ~^~^~^~^~^~^~^~^~^~^~^~^~
+              .
+             :
+            : :
+           :   :
+          :     :
+         :       :
+        :_________:
+        |         |
+        |         |
+        |         |
+        |    O    |
+        |         |
+        \       /
+         \     /
+          \   /
+           \ /
+            V
 "#,
     },
     Landmark {
@@ -211,14 +245,16 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Structure,
         description: "Give me your tired, your poor, your huddled masses yearning to scroll free.",
         ascii_art: r#"
-           <*|
-            ||
-           _||_
-          /    \
-         |      |
-         |______|
-        /________\
-       |__________|
+             |
+             |
+           _/^\_
+          <     >
+           /.-.\
+          `/   \`
+          /_____\
+         |       |
+         |       |
+         |_______|
 "#,
     },
     Landmark {
@@ -227,15 +263,18 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Fiction,
         description: "King of the Monsters. Powered by radiation, just like your eyes.",
         ascii_art: r#"
-             ,     
-            /|  _  
-          _/_|_/_\ 
-         /        \
-        |  (o) (o) |
-        C      _)  |
-         | ,___|   |
-        /|/     \  |_\
-       / /       \ \ \
+             ,
+            /|   _
+          _/_|__/_\_
+         /          \
+        |  (o)  (o)  |
+        C            |
+         |   ____   |
+        /|  /    \  |\
+       / | |      | | \
+      /  | |      | |  \
+     /   |_|      |_|   \
+    /___/            \___\
 "#,
     },
     Landmark {
@@ -278,12 +317,15 @@ pub const LANDMARKS: &[Landmark] = &[
         description: "Higher than Eiffel and painted orange for aviation safety. Kaiju magnet.",
         ascii_art: r#"
              |
-             A
-            / \
-           /---\
+            _A_
+           /   \
           /_____\
          /       \
         /_________\
+       /           \
+      /_____________\
+     /               \
+    /_________________\
 "#,
     },
     Landmark {
@@ -293,14 +335,19 @@ pub const LANDMARKS: &[Landmark] = &[
         description: "The spot where King Kong fell for a blonde.",
         ascii_art: r#"
              |
-             |
-            |||
-            |||
-           |||||
-           |||||
-          |||||||
-         |||||||||
-        |||||||||||
+            _|_
+           |   |
+           |   |
+           |___|
+          /     \
+         |       |
+         |       |
+         |_______|
+        /         \
+       |           |
+       |___________|
+      /             \
+     |_______________|
 "#,
     },
     Landmark {
@@ -343,17 +390,20 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Fiction,
         description: "A great eye, lidless, wreathed in flame. It sees your browser history.",
         ascii_art: r#"
-           (  )
-          ( () )
-         ( (()) )
-          \__/
-          |  |
-         /    \
-        |      |
-        |  []  |
-       /|      |\
-      / |______| \
-     /____________\
+            ( )
+           (   )
+          (  O  )
+           (   )
+            | |
+           /   \
+          /     \
+         |       |
+         |   _   |
+        /|  | |  |\
+       / |  | |  | \
+      /  |__| |__|  \
+     /_______________\
+    /_________________\
 "#,
     },
     Landmark {
@@ -474,13 +524,15 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Tech,
         description: "The BU60-1 balloon record. Thin air, great view, zero pressure.",
         ascii_art: r#"
-             / \
-            /   \
-           (     )
-            \   /
-             \ /
-              |
-             [ ]
+          .---.
+        .'     '.
+       /         \
+      :           :
+       \         /
+        '.     .'
+          `._.`
+           | |
+          [___]
 "#,
     },
     Landmark {
@@ -489,12 +541,25 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Space,
         description: "A meteor burning up in the mesosphere. Make a wish!",
         ascii_art: r#"
-           *
-             \
-               \
-                 \
-                   \
-                     .
+                                  *
+                                --+--
+                                  *
+                                . '
+                              . '
+                            . '
+                          . '
+                        . '
+                      . '
+                    . '
+                  . '
+                . '
+              . '
+            . '
+          . '
+        . '
+      . '
+    . '
+   '
 "#,
     },
     Landmark {
@@ -503,11 +568,19 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Space,
         description: "Solar wind hitting the atmosphere. Nature's RGB lighting.",
         ascii_art: r#"
-         (   (   )   )
-          ) ( ) ( ) (
-         ( ) ( ) ( ) )
-          |   |   |
-          |   |   |
+           .   *   .   *   .   *   .   *   .
+          *   .   *   .   *   .   *   .   *
+       .     .     .     .     .     .     .
+      (   *   (   *   (   *   (   *   (   *
+       )     . )     . )     . )     . )
+      (   .   (   .   (   .   (   .   (
+       )     * )     * )     * )     * )
+      (   *   (   *   (   *   (   *   (
+       )     . )     . )     . )     . )
+       |   .   |   .   |   .   |   .   |
+       |       |       |       |       |
+       |   *   |   *   |   *   |   *   |
+       |       |       |       |       |
 "#,
     },
     Landmark {
@@ -554,13 +627,12 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Space,
         description: "Orbiting at 27,600 km/h. Try not to get scroll-sick.",
         ascii_art: r#"
-        .       .
-         \     /
-        ._\___/_.
-       / ( o ) \
-      /   `-'   \
-     /___________\
-    /     |     \
+       |[]|       |[]|
+       |[]|-------|[]|
+       |[]|   |   |[]|
+       |[]|---|---|[]|
+              |
+             [O]
 "#,
     },
     Landmark {
@@ -569,12 +641,15 @@ pub const LANDMARKS: &[Landmark] = &[
         category: Category::Space,
         description: "Looking at the dawn of the universe. Or just your commit history.",
         ascii_art: r#"
-         \  |  /
-        __\ | /__
-        \       /
-         \_____/
-           | |
-           |_|
+          \ | /
+         __\|/__
+        /  / \  \
+       |  | O |  |
+        \  \ /  /
+         -------
+         /_____\
+          |   |
+          |___|
 "#,
     },
 ];

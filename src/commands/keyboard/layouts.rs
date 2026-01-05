@@ -431,6 +431,29 @@ fn build_ansi_layout(map: &str) -> Vec<KeyParams> {
     add("Menu", "MENU", 50, 12, 5);
     add("Ctrl", "RIGHTCONTROL", 55, 12, 5);
 
+    // --- Navigation Cluster ---
+    // Gap of 2 units from main block (ends at 60), so start at 62
+    let nav_start = 62;
+
+    // Row 1: Insert, Home, PageUp
+    add("Ins", "INSERT", nav_start, 0, 4);
+    add("Home", "HOME", nav_start + 4, 0, 4);
+    add("PgUp", "PAGEUP", nav_start + 8, 0, 4);
+
+    // Row 2: Delete, End, PageDown
+    add("Del", "DELETE", nav_start, 3, 4);
+    add("End", "END", nav_start + 4, 3, 4);
+    add("PgDn", "PAGEDOWN", nav_start + 8, 3, 4);
+
+    // --- Arrow Keys ---
+    // Row 4: Up Arrow (aligned with empty space above Down)
+    add("Up", "UP", nav_start + 4, 9, 4);
+
+    // Row 5: Left, Down, Right Arrows
+    add("Left", "LEFT", nav_start, 12, 4);
+    add("Down", "DOWN", nav_start + 4, 12, 4);
+    add("Right", "RIGHT", nav_start + 8, 12, 4);
+
     keys
 }
 

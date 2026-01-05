@@ -16,6 +16,7 @@ inventory::submit! {
         title: "Computers",
         render: render_tui,
         handle_key,
+        handle_mouse: crate::commands::default_handle_mouse,
         priority: 10,
     }
 }
