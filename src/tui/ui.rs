@@ -47,24 +47,24 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 
     // Render Notification Popup
-    if let Some((msg, time)) = &app.notification {
-        if time.elapsed() < std::time::Duration::from_secs(3) {
-            let area = centered_fixed_area(60, 5, f.area());
-            f.render_widget(Clear, area);
+    if let Some((msg, time)) = &app.notification
+        && time.elapsed() < std::time::Duration::from_secs(3)
+    {
+        let area = centered_fixed_area(60, 5, f.area());
+        f.render_widget(Clear, area);
 
-            let block = Block::default()
-                .title(" Notification ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Green));
+        let block = Block::default()
+            .title(" Notification ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green));
 
-            let p = Paragraph::new(msg.clone())
-                .block(block)
-                .style(Style::default().fg(Color::White))
-                .alignment(Alignment::Center)
-                .wrap(Wrap { trim: true });
+        let p = Paragraph::new(msg.clone())
+            .block(block)
+            .style(Style::default().fg(Color::White))
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true });
 
-            f.render_widget(p, area);
-        }
+        f.render_widget(p, area);
     }
 }
 

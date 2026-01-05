@@ -721,8 +721,14 @@ impl App {
                 AppSortMode::Keys => a.keys.cmp(&b.keys),
                 AppSortMode::Clicks => a.clicks.cmp(&b.clicks),
                 AppSortMode::Scrolls => a.scrolls.cmp(&b.scrolls),
-                AppSortMode::Download => a.download_mb.partial_cmp(&b.download_mb).unwrap_or(std::cmp::Ordering::Equal),
-                AppSortMode::Upload => a.upload_mb.partial_cmp(&b.upload_mb).unwrap_or(std::cmp::Ordering::Equal),
+                AppSortMode::Download => a
+                    .download_mb
+                    .partial_cmp(&b.download_mb)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                AppSortMode::Upload => a
+                    .upload_mb
+                    .partial_cmp(&b.upload_mb)
+                    .unwrap_or(std::cmp::Ordering::Equal),
                 AppSortMode::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             };
 
@@ -739,10 +745,20 @@ impl App {
 
         self.network_stats.sort_by(|a, b| {
             let cmp = match mode {
-                NetworkSortMode::Download => a.download_mb.partial_cmp(&b.download_mb).unwrap_or(std::cmp::Ordering::Equal),
-                NetworkSortMode::Upload => a.upload_mb.partial_cmp(&b.upload_mb).unwrap_or(std::cmp::Ordering::Equal),
-                NetworkSortMode::Total => (a.download_mb + a.upload_mb).partial_cmp(&(b.download_mb + b.upload_mb)).unwrap_or(std::cmp::Ordering::Equal),
-                NetworkSortMode::Interface => a.interface.to_lowercase().cmp(&b.interface.to_lowercase()),
+                NetworkSortMode::Download => a
+                    .download_mb
+                    .partial_cmp(&b.download_mb)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                NetworkSortMode::Upload => a
+                    .upload_mb
+                    .partial_cmp(&b.upload_mb)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                NetworkSortMode::Total => (a.download_mb + a.upload_mb)
+                    .partial_cmp(&(b.download_mb + b.upload_mb))
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                NetworkSortMode::Interface => {
+                    a.interface.to_lowercase().cmp(&b.interface.to_lowercase())
+                }
             };
 
             match order {

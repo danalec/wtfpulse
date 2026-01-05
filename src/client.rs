@@ -109,13 +109,12 @@ impl WhatpulseClient {
         }
 
         // Check cache
-        if let Ok(cache) = self.cache.lock() {
-            if let Some((user, timestamp)) = &cache.user {
-                if timestamp.elapsed() < Duration::from_secs(300) {
-                    debug!("Returning cached user");
-                    return Ok(user.clone());
-                }
-            }
+        if let Ok(cache) = self.cache.lock()
+            && let Some((user, timestamp)) = &cache.user
+            && timestamp.elapsed() < Duration::from_secs(300)
+        {
+            debug!("Returning cached user");
+            return Ok(user.clone());
         }
 
         let url = format!("/users/{}", self._user_id);
@@ -135,13 +134,12 @@ impl WhatpulseClient {
         }
 
         // Check cache
-        if let Ok(cache) = self.cache.lock() {
-            if let Some((pulses, timestamp)) = &cache.pulses {
-                if timestamp.elapsed() < Duration::from_secs(300) {
-                    debug!("Returning cached pulses");
-                    return Ok(pulses.clone());
-                }
-            }
+        if let Ok(cache) = self.cache.lock()
+            && let Some((pulses, timestamp)) = &cache.pulses
+            && timestamp.elapsed() < Duration::from_secs(300)
+        {
+            debug!("Returning cached pulses");
+            return Ok(pulses.clone());
         }
 
         let mut all_pulses = Vec::new();
@@ -178,13 +176,12 @@ impl WhatpulseClient {
         }
 
         // Check cache
-        if let Ok(cache) = self.cache.lock() {
-            if let Some((computers, timestamp)) = &cache.computers {
-                if timestamp.elapsed() < Duration::from_secs(300) {
-                    debug!("Returning cached computers");
-                    return Ok(computers.clone());
-                }
-            }
+        if let Ok(cache) = self.cache.lock()
+            && let Some((computers, timestamp)) = &cache.computers
+            && timestamp.elapsed() < Duration::from_secs(300)
+        {
+            debug!("Returning cached computers");
+            return Ok(computers.clone());
         }
 
         let url = format!("/users/{}/computers", self._user_id);

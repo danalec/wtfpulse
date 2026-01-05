@@ -27,10 +27,10 @@ impl AppConfig {
             config.api_key = Some(key);
         }
 
-        if let Ok(rate_str) = std::env::var("WTFPULSE_REFRESH_RATE") {
-            if let Ok(rate) = rate_str.parse::<u64>() {
-                config.refresh_rate_seconds = Some(rate);
-            }
+        if let Ok(rate_str) = std::env::var("WTFPULSE_REFRESH_RATE")
+            && let Ok(rate) = rate_str.parse::<u64>()
+        {
+            config.refresh_rate_seconds = Some(rate);
         }
 
         Ok(config)

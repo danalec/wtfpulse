@@ -2,11 +2,11 @@ use crate::commands::TuiPage;
 use crate::tui::app::App;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 
 pub struct SettingsPage;
@@ -47,15 +47,18 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
 
     let refresh_rate = app.config.refresh_rate_seconds.unwrap_or(60);
     let rr_text = format!("Refresh Rate: {} seconds", refresh_rate);
-    
+
     let rr_block = Block::default()
         .borders(Borders::ALL)
         .title(" Configuration ")
-        .style(Style::default().fg(if app.is_editing_api_key { Color::Gray } else { Color::White }));
-    
-    let rr_para = Paragraph::new(rr_text)
-        .block(rr_block);
-    
+        .style(Style::default().fg(if app.is_editing_api_key {
+            Color::Gray
+        } else {
+            Color::White
+        }));
+
+    let rr_para = Paragraph::new(rr_text).block(rr_block);
+
     f.render_widget(rr_para, chunks[0]);
 
     // API Key
@@ -78,34 +81,35 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::Gray),
         )
     };
-    
+
     let key_block = Block::default()
         .borders(Borders::ALL)
         .title(" API Key ")
         .border_style(border_style)
         .style(key_style);
-    
+
     f.render_widget(Paragraph::new(key_text).block(key_block), chunks[1]);
 
     // Instructions
-    let mut instructions = vec![
-        Line::from(Span::styled("Controls:", Style::default().add_modifier(Modifier::BOLD))),
-    ];
+    let mut instructions = vec![Line::from(Span::styled(
+        "Controls:",
+        Style::default().add_modifier(Modifier::BOLD),
+    ))];
 
     if app.is_editing_api_key {
         instructions.push(Line::from("  Enter: Save API Key"));
         instructions.push(Line::from("  Ctrl+V: Paste from Clipboard"));
         instructions.push(Line::from("  Esc: Cancel Editing"));
     } else {
-        instructions.push(Line::from("  r: Cycle Refresh Rate (1s, 5s, 10s, 30s, 60s)"));
+        instructions.push(Line::from(
+            "  r: Cycle Refresh Rate (1s, 5s, 10s, 30s, 60s)",
+        ));
         instructions.push(Line::from("  e: Edit API Key"));
         instructions.push(Line::from("  S: Save Configuration"));
     }
-    
-    let instr_block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Help ");
-        
+
+    let instr_block = Block::default().borders(Borders::ALL).title(" Help ");
+
     f.render_widget(Paragraph::new(instructions).block(instr_block), chunks[2]);
 }
 
@@ -121,7 +125,7 @@ pub fn handle_settings_key(app: &mut App, key: KeyEvent) -> bool {
                     app.config.api_key = Some(new_key);
                 }
                 app.is_editing_api_key = false;
-                
+
                 // Auto-save config when confirming API key
                 if let Err(e) = app.config.save() {
                     app.error = Some(format!("Failed to save config: {}", e));
@@ -140,15 +144,17 @@ pub fn handle_settings_key(app: &mut App, key: KeyEvent) -> bool {
                 true
             }
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    if let Ok(text) = clipboard.get_text() {
-                        app.api_key_input.push_str(&text);
-                    }
+                if let Ok(mut clipboard) = arboard::Clipboard::new()
+                    && let Ok(text) = clipboard.get_text()
+                {
+                    app.api_key_input.push_str(&text);
                 }
                 true
             }
             KeyCode::Char(c) => {
-                if !key.modifiers.contains(KeyModifiers::CONTROL) && !key.modifiers.contains(KeyModifiers::ALT) {
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                {
                     app.api_key_input.push(c);
                 }
                 true

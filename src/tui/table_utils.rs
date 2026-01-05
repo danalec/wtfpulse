@@ -1,16 +1,16 @@
+use crate::tui::app::App;
 use crossterm::event::KeyCode;
 use ratatui::{
+    Frame,
     layout::Rect,
     widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState, TableState},
-    Frame,
 };
-use crate::tui::app::App;
 
 pub fn render_scrollbar(f: &mut Frame, _app: &App, area: Rect, len: usize, state: &mut TableState) {
     let mut scroll_state = ScrollbarState::default()
         .content_length(len)
         .position(state.selected().unwrap_or(0));
-    
+
     f.render_stateful_widget(
         Scrollbar::default()
             .orientation(ScrollbarOrientation::VerticalRight)

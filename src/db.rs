@@ -47,7 +47,9 @@ impl Database {
             if path.exists() {
                 return Ok(path);
             }
-            return Err(anyhow::anyhow!("WTFPULSE_DB_PATH specified but file does not exist"));
+            return Err(anyhow::anyhow!(
+                "WTFPULSE_DB_PATH specified but file does not exist"
+            ));
         }
         // println!("DEBUG: No WTFPULSE_DB_PATH set");
 
@@ -288,19 +290,17 @@ impl Database {
             });
 
             if let Ok(rows) = rows {
-                for row in rows {
-                    if let Ok((name, d, u)) = row {
-                        let entry = map.entry(name.clone()).or_insert(AppStats {
-                            name: name.clone(),
-                            keys: 0,
-                            clicks: 0,
-                            scrolls: 0,
-                            download_mb: 0.0,
-                            upload_mb: 0.0,
-                        });
-                        entry.download_mb += (d as f64) / 1024.0 / 1024.0;
-                        entry.upload_mb += (u as f64) / 1024.0 / 1024.0;
-                    }
+                for (name, d, u) in rows.flatten() {
+                    let entry = map.entry(name.clone()).or_insert(AppStats {
+                        name: name.clone(),
+                        keys: 0,
+                        clicks: 0,
+                        scrolls: 0,
+                        download_mb: 0.0,
+                        upload_mb: 0.0,
+                    });
+                    entry.download_mb += (d as f64) / 1024.0 / 1024.0;
+                    entry.upload_mb += (u as f64) / 1024.0 / 1024.0;
                 }
             }
         }

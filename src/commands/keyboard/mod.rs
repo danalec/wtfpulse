@@ -565,4 +565,3 @@ fn get_color(count: u64, max: u64) -> Color {
 
     Color::Rgb(r, g, b)
 }
-

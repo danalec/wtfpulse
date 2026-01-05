@@ -1,13 +1,13 @@
 use crate::commands::TuiPage;
 use crate::tui::app::{App, NetworkSortMode, SortOrder};
+use crate::tui::period_utils::{StatsTarget, get_display_period, handle_period_nav};
 use crate::tui::table_utils::{handle_table_nav, render_scrollbar};
-use crate::tui::period_utils::{handle_period_nav, get_display_period, StatsTarget};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Row, Table, Cell},
+    widgets::{Block, Borders, Cell, Row, Table},
 };
 
 inventory::submit! {
@@ -15,7 +15,7 @@ inventory::submit! {
         title: "Network",
         render: render_network,
         handle_key: handle_network_key,
-        handle_mouse: handle_mouse,
+        handle_mouse,
         priority: 50,
     }
 }
@@ -52,7 +52,7 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
     ];
 
     let period_str = get_display_period(app.network_stats_period);
-    
+
     // Sort Indicator
     let sort_indicator = match app.network_sort_order {
         SortOrder::Ascending => "▲",
@@ -66,14 +66,12 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let title = format!(
-        " Network Activity - {} (h/l: Period, s: Sort [{} {}], /: Date) ", 
+        " Network Activity - {} (h/l: Period, s: Sort [{} {}], /: Date) ",
         period_str, sort_col, sort_indicator
     );
 
     // Dynamic Header with Indicator
-    let headers = vec![
-        "Interface", "Download", "Upload", "Total"
-    ];
+    let headers = ["Interface", "Download", "Upload", "Total"];
     let header_cells = headers.iter().map(|h| {
         let mut content = h.to_string();
         let is_sorted = match (app.network_sort_mode, h) {
@@ -90,21 +88,20 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
     });
 
     let table = Table::new(rows, widths)
-        .header(
-            Row::new(header_cells)
-                .bottom_margin(1),
-        )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title),
-        )
+        .header(Row::new(header_cells).bottom_margin(1))
+        .block(Block::default().borders(Borders::ALL).title(title))
         .row_highlight_style(row_highlight_style)
         .highlight_symbol(">> ");
 
     f.render_stateful_widget(table, chunks[0], &mut app.network_table_state.borrow_mut());
 
-    render_scrollbar(f, app, chunks[0], app.network_stats.len(), &mut app.network_table_state.borrow_mut());
+    render_scrollbar(
+        f,
+        app,
+        chunks[0],
+        app.network_stats.len(),
+        &mut app.network_table_state.borrow_mut(),
+    );
 
     if app.date_picker.open {
         crate::tui::ui::render_date_picker(f, app, area);
@@ -143,7 +140,7 @@ fn handle_network_key(app: &mut App, key: KeyEvent) -> bool {
             true
         }
         KeyCode::Char('o') => {
-             app.network_sort_order = match app.network_sort_order {
+            app.network_sort_order = match app.network_sort_order {
                 SortOrder::Ascending => SortOrder::Descending,
                 SortOrder::Descending => SortOrder::Ascending,
             };

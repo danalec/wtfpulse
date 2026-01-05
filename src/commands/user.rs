@@ -83,8 +83,6 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     }
 }
 
-
-
 pub async fn execute(client: &WhatpulseClient) -> Result<()> {
     let user = client.get_user().await?;
     // CLI output remains simple
@@ -444,7 +442,6 @@ fn render_pulse_graph(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(sparkline, inner_area);
 }
-
 
 #[cfg(test)]
 mod tests {

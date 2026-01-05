@@ -1,6 +1,8 @@
-use crate::tui::app::{App, TimePeriod, SelectionStep, spawn_fetch_app_stats, spawn_fetch_network_stats};
-use crossterm::event::{KeyCode, KeyEvent};
+use crate::tui::app::{
+    App, SelectionStep, TimePeriod, spawn_fetch_app_stats, spawn_fetch_network_stats,
+};
 use chrono::{Days, Months};
+use crossterm::event::{KeyCode, KeyEvent};
 
 #[derive(Debug, Clone, Copy)]
 pub enum StatsTarget {
@@ -28,7 +30,7 @@ pub fn get_period_string(period: TimePeriod, app: &App) -> String {
 }
 
 pub fn get_display_period(period: TimePeriod) -> &'static str {
-     match period {
+    match period {
         TimePeriod::Today => "Today",
         TimePeriod::Yesterday => "Yesterday",
         TimePeriod::Week => "Week",
@@ -158,7 +160,7 @@ pub fn handle_period_nav(app: &mut App, key: KeyEvent, target: StatsTarget) -> b
     if app.date_picker.open {
         handle_date_picker_key(app, key);
         if !app.date_picker.open {
-             fetch_stats(app, target);
+            fetch_stats(app, target);
         }
         return true;
     }
@@ -174,14 +176,14 @@ pub fn handle_period_nav(app: &mut App, key: KeyEvent, target: StatsTarget) -> b
                 StatsTarget::Applications => app.app_stats_period = new_period,
                 StatsTarget::Network => app.network_stats_period = new_period,
             };
-            
+
             if new_period != TimePeriod::Custom {
                 fetch_stats(app, target);
             }
             true
         }
         KeyCode::Char('l') => {
-             let current = match target {
+            let current = match target {
                 StatsTarget::Applications => app.app_stats_period,
                 StatsTarget::Network => app.network_stats_period,
             };
@@ -190,7 +192,7 @@ pub fn handle_period_nav(app: &mut App, key: KeyEvent, target: StatsTarget) -> b
                 StatsTarget::Applications => app.app_stats_period = new_period,
                 StatsTarget::Network => app.network_stats_period = new_period,
             };
-            
+
             if new_period != TimePeriod::Custom {
                 fetch_stats(app, target);
             }
@@ -208,6 +210,6 @@ pub fn handle_period_nav(app: &mut App, key: KeyEvent, target: StatsTarget) -> b
             }
             true
         }
-        _ => false
+        _ => false,
     }
 }
