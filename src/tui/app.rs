@@ -2,6 +2,7 @@ use crate::client::{ComputerResponse, PulseResponse, UserResponse, WhatpulseClie
 use crate::commands::calorimetry::{EnergyStats, SwitchProfile, calculate_energy};
 use crate::commands::get_pages;
 use crate::commands::heatmap::layouts::KeyboardLayout;
+
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use tokio::sync::mpsc;
@@ -21,20 +22,23 @@ pub struct KineticStats {
     pub is_connected: bool,
     pub connection_error: Option<String>,
     pub last_keys: i64,
+    pub last_scrolls: i64,
     pub last_velocity_mps: f64,
     pub last_update: Option<chrono::DateTime<chrono::Local>>,
     pub debug_info: Option<String>,
     // Raw stats for Dashboard
     pub unpulsed_keys: i64,
     pub unpulsed_clicks: i64,
+    pub unpulsed_scrolls: i64,
     pub keys_per_second: f64,
 }
 
 impl KineticStats {
-    pub fn update(&mut self, data: &RealtimeData, profile: &SwitchProfile) {
+    pub fn update(&mut self, data: &RealtimeData, profile: &SwitchProfile) -> u32 {
         // Store raw data
         self.unpulsed_keys = data.unpulsed_keys;
         self.unpulsed_clicks = data.unpulsed_clicks;
+        self.unpulsed_scrolls = data.unpulsed_scrolls;
         self.keys_per_second = data.keys_per_second;
 
         let now = chrono::Local::now();
@@ -57,6 +61,15 @@ impl KineticStats {
 
         // Update last keys
         self.last_keys = data.unpulsed_keys;
+
+        // Calculate Delta Scrolls
+        let delta_scrolls = if self.last_scrolls == 0 {
+            0 // First update
+        } else {
+            data.unpulsed_scrolls - self.last_scrolls
+        };
+        let delta_scrolls = if delta_scrolls < 0 { 0 } else { delta_scrolls };
+        self.last_scrolls = data.unpulsed_scrolls;
 
         // Force (N) * Distance (m) * Keys/s = Power (W)
         let power = profile.force_newtons * profile.distance_meters * data.keys_per_second;
@@ -85,6 +98,8 @@ impl KineticStats {
         if self.history_power.len() > 100 {
             self.history_power.remove(0);
         }
+
+        delta_scrolls as u32
     }
 }
 
@@ -92,6 +107,7 @@ impl KineticStats {
 pub struct RealtimeData {
     pub unpulsed_keys: i64,
     pub unpulsed_clicks: i64,
+    pub unpulsed_scrolls: i64,
     pub keys_per_second: f64,
 }
 
@@ -164,6 +180,13 @@ impl Default for DatePickerState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ScrollMode {
+    #[default]
+    Lifetime,
+    Session,
+}
+
 #[derive(Debug, Clone)]
 pub enum MonitorCommand {
     Pulse,
@@ -199,6 +222,10 @@ pub struct App {
     pub data_source: String,
     pub heatmap_error: Option<String>,
     pub should_quit: bool,
+    pub scroll_meters: f64,
+    pub scroll_mode: ScrollMode,
+    pub session_start_scrolls: Option<u64>,
+    pub current_total_scrolls: u64,
 }
 
 impl App {
@@ -236,6 +263,10 @@ impl App {
             data_source: String::from("API"),
             heatmap_error: None,
             should_quit: false,
+            scroll_meters: 0.0,
+            scroll_mode: ScrollMode::default(),
+            session_start_scrolls: None,
+            current_total_scrolls: 0,
         }
     }
 
@@ -268,8 +299,12 @@ impl App {
 
     pub async fn update(&mut self, action: Action) -> bool {
         match action {
-            Action::Quit => return true,
-            Action::Tick => {}
+            Action::Quit => {
+                return true;
+            }
+            Action::Tick => {
+                // No time-based physics updates needed anymore
+            }
             Action::Refresh => {
                 self.user_loading = true;
                 self.pulses_loading = true;
@@ -284,19 +319,34 @@ impl App {
                     handled = (page.handle_key)(self, key);
                 }
 
-                // Handle Kinetic Tab Shortcuts
-                if self.current_tab == 3 {
+                // Handle Scroll Tower Tab Shortcuts (Index 4)
+                if self.current_tab == 4 {
                     match key.code {
                         KeyCode::Char('p') => {
                             self.profile_index = (self.profile_index + 1) % self.profiles.len();
                             handled = true;
                         }
-                        KeyCode::Char(' ') => {
-                            self.trigger_pulse().await;
-                            handled = true;
-                        }
                         KeyCode::Char('w') => {
                             self.trigger_open_window().await;
+                            handled = true;
+                        }
+                        KeyCode::Char('m') => {
+                            // Toggle Mode
+                            self.scroll_mode = match self.scroll_mode {
+                                ScrollMode::Lifetime => ScrollMode::Session,
+                                ScrollMode::Session => ScrollMode::Lifetime,
+                            };
+
+                            // Immediately recalc meters for UI responsiveness
+                            // Need logic similar to RealtimeUpdate but utilizing current stored totals
+                            let total = self.current_total_scrolls;
+                            let display_scrolls = match self.scroll_mode {
+                                ScrollMode::Lifetime => total,
+                                ScrollMode::Session => total
+                                    .saturating_sub(self.session_start_scrolls.unwrap_or(total)),
+                            };
+                            self.scroll_meters = display_scrolls as f64 * 0.016;
+
                             handled = true;
                         }
                         _ => {}
@@ -381,7 +431,30 @@ impl App {
             }
             Action::RealtimeUpdate(data) => {
                 let profile = self.profiles[self.profile_index].clone();
-                self.kinetic_stats.update(&data, &profile);
+                let _ = self.kinetic_stats.update(&data, &profile);
+
+                // Update Scroll Meters with absolute total (User Baseline + Unpulsed)
+                // 1 tick = 0.016 meters (1.6 cm)
+                if let Some(user) = &self.user_stats {
+                    let baseline = user.totals.scrolls;
+                    let unpulsed = data.unpulsed_scrolls.max(0) as u64;
+                    let total = baseline + unpulsed;
+
+                    self.current_total_scrolls = total;
+
+                    if self.session_start_scrolls.is_none() {
+                        self.session_start_scrolls = Some(total);
+                    }
+
+                    let display_scrolls = match self.scroll_mode {
+                        ScrollMode::Lifetime => total,
+                        ScrollMode::Session => {
+                            total.saturating_sub(self.session_start_scrolls.unwrap_or(total))
+                        }
+                    };
+
+                    self.scroll_meters = display_scrolls as f64 * 0.016;
+                }
             }
             Action::DebugInfo(msg) => {
                 self.kinetic_stats.debug_info = Some(msg);
@@ -507,6 +580,7 @@ mod tests {
         let data1 = RealtimeData {
             unpulsed_keys: 10,
             unpulsed_clicks: 0,
+            unpulsed_scrolls: 0,
             keys_per_second: 5.0,
         };
         stats.update(&data1, &profile);
@@ -523,6 +597,7 @@ mod tests {
         let data2 = RealtimeData {
             unpulsed_keys: 20,
             unpulsed_clicks: 0,
+            unpulsed_scrolls: 0,
             keys_per_second: 5.0,
         };
         stats.update(&data2, &profile);

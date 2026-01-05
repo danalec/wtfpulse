@@ -64,6 +64,8 @@ struct WpRealtime {
 struct WpUnpulsed {
     keys: i64,
     clicks: i64,
+    #[serde(default)]
+    scrolls: i64,
 }
 
 // Helper to parse localized float strings (e.g. "2,17" or "2.17")
@@ -181,10 +183,10 @@ pub async fn spawn_monitor_task(
                                                     };
 
                                                     // Parse Unpulsed Stats
-                                                    let (keys, clicks) = if let Some(up) = data.unpulsed {
-                                                        (up.keys, up.clicks)
+                                                    let (keys, clicks, scrolls) = if let Some(up) = data.unpulsed {
+                                                        (up.keys, up.clicks, up.scrolls)
                                                     } else {
-                                                        (0, 0)
+                                                        (0, 0, 0)
                                                     };
 
                                                     // We can update last_time/last_keys if we want to verify KPS,
@@ -194,6 +196,7 @@ pub async fn spawn_monitor_task(
                                                     let _ = tx.send(Action::RealtimeUpdate(RealtimeData {
                                                         unpulsed_keys: keys,
                                                         unpulsed_clicks: clicks,
+                                                        unpulsed_scrolls: scrolls,
                                                         keys_per_second: kps,
                                                     })).await;
                                                 }

@@ -168,6 +168,13 @@ impl WhatpulseClient {
             .parse()
             .unwrap_or(0.0);
 
+        let scrolls = val
+            .get("scrolls")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0")
+            .parse()
+            .unwrap_or(0);
+
         Ok(UserResponse {
             id: 0,
             username: "Local User".to_string(),
@@ -188,7 +195,7 @@ impl WhatpulseClient {
                 download_mb: Some(download_mb),
                 upload_mb: Some(upload_mb),
                 uptime_seconds: Some(uptime),
-                scrolls: 0,
+                scrolls,
                 distance_miles: Some(0.0),
             },
             ranks: None,
