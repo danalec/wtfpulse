@@ -222,9 +222,16 @@ impl WhatpulseClient {
             .with_context(|| format!("failed to parse JSON from {}: {}", url, text))
     }
 
-    pub async fn get_heatmap(&self, _period: &str) -> Result<(HashMap<String, u64>, String)> {
-        let map = HashMap::new();
-        Ok((map, "Session Mode".to_string()))
+    pub async fn get_heatmap(&self, period: &str) -> Result<(HashMap<String, u64>, String)> {
+        let period_owned = period.to_string();
+
+        let map = tokio::task::spawn_blocking(move || -> Result<HashMap<String, u64>> {
+            let db = crate::db::Database::new()?;
+            db.get_heatmap_stats(&period_owned)
+        })
+        .await??;
+
+        Ok((map, "Local DB".to_string()))
     }
 }
 

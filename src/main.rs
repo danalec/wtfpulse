@@ -6,6 +6,7 @@ use std::fs::File;
 
 mod client;
 mod commands;
+pub mod db;
 
 pub mod key_mapping;
 pub mod tui;
@@ -24,7 +25,7 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load .env file if it exists
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
 
     // Initialize logging
     if let Ok(file) = File::create("wtfpulse.log") {
