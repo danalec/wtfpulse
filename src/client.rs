@@ -5,9 +5,60 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::collections::HashMap;
+
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+struct RateLimiter {
+    remaining: u32,
+    reset_at: SystemTime,
+    limit: u32,
+}
+
+impl RateLimiter {
+    fn new() -> Self {
+        Self {
+            remaining: 1000, // Default optimistic
+            reset_at: SystemTime::now(),
+            limit: 1000,
+        }
+    }
+
+    fn update(&mut self, headers: &reqwest::header::HeaderMap) {
+        if let Some(limit) = headers.get("X-RateLimit-Limit")
+            && let Ok(val) = limit.to_str().unwrap_or("1000").parse()
+        {
+            self.limit = val;
+        }
+        if let Some(remaining) = headers.get("X-RateLimit-Remaining")
+            && let Ok(val) = remaining.to_str().unwrap_or("1").parse()
+        {
+            self.remaining = val;
+        }
+        if let Some(reset) = headers.get("X-RateLimit-Reset")
+            && let Ok(ts) = reset.to_str().unwrap_or("0").parse::<u64>()
+        {
+            self.reset_at = UNIX_EPOCH + Duration::from_secs(ts);
+        }
+    }
+
+    fn check_and_consume(&mut self) -> Option<Duration> {
+        let now = SystemTime::now();
+
+        // If the reset time has passed, we reset our local counters
+        if now >= self.reset_at {
+            self.remaining = self.limit;
+        }
+
+        if self.remaining > 0 {
+            self.remaining -= 1;
+            return None;
+        }
+
+        // No remaining requests and we are within the window
+        self.reset_at.duration_since(now).ok()
+    }
+}
 
 struct ClientCache {
     pulses: Option<(Vec<PulseResponse>, Instant)>,
@@ -22,6 +73,7 @@ pub struct WhatpulseClient {
     _user_id: String,
     is_local: bool,
     cache: Arc<Mutex<ClientCache>>,
+    rate_limiter: Arc<Mutex<RateLimiter>>,
 }
 
 impl WhatpulseClient {
@@ -53,6 +105,7 @@ impl WhatpulseClient {
                 user: None,
                 computers: None,
             })),
+            rate_limiter: Arc::new(Mutex::new(RateLimiter::new())),
         })
     }
 
@@ -72,6 +125,7 @@ impl WhatpulseClient {
                 user: None,
                 computers: None,
             })),
+            rate_limiter: Arc::new(Mutex::new(RateLimiter::new())),
         })
     }
 
@@ -152,9 +206,18 @@ impl WhatpulseClient {
 
             current_url = wrapper.links.and_then(|l| l.next);
 
-            // Be a good citizen: yield and sleep slightly between pages
-            // This prevents hammering the API in a tight loop
+            // Limit to 2 pages (200 pulses) to avoid hitting Rate Limits (429) on large accounts
+            // Use --all or similar config if full history is strictly needed (future improvement)
             page_count += 1;
+            if page_count >= 2 {
+                debug!(
+                    "Stopping pulse fetch at page {} to prevent rate limiting",
+                    page_count
+                );
+                break;
+            }
+
+            // Be a good citizen: yield and sleep slightly between pages
             if page_count % 5 == 0 {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             } else {
@@ -283,6 +346,20 @@ impl WhatpulseClient {
         let mut backoff_ms = 1000; // 1 second start
 
         loop {
+            // Check rate limiter (only for remote API)
+            let wait_duration = if !self.is_local {
+                let mut limiter = self.rate_limiter.lock().unwrap();
+                limiter.check_and_consume()
+            } else {
+                None
+            };
+
+            if let Some(duration) = wait_duration {
+                debug!("Rate limit reached locally, waiting {:?}...", duration);
+                tokio::time::sleep(duration).await;
+                continue;
+            }
+
             // We need to clone the request builder or build it new each time?
             // Client is reusable, so we build the request each iteration.
             let resp = self
@@ -291,6 +368,12 @@ impl WhatpulseClient {
                 .send()
                 .await
                 .with_context(|| format!("request failed: GET {}", url))?;
+
+            // Update rate limiter from headers (only for remote API)
+            if !self.is_local {
+                let mut limiter = self.rate_limiter.lock().unwrap();
+                limiter.update(resp.headers());
+            }
 
             let status = resp.status();
             if status.is_success() {
@@ -348,94 +431,6 @@ impl WhatpulseClient {
                 };
             return Err(anyhow!("API Error {}: {}", status, error_msg));
         }
-    }
-
-    pub async fn get_heatmap(&self, period: &str) -> Result<(HashMap<String, u64>, String)> {
-        let period_owned = period.to_string();
-
-        let map = tokio::task::spawn_blocking(move || -> Result<HashMap<String, u64>> {
-            let db = crate::db::Database::new()?;
-            db.get_heatmap_stats(&period_owned)
-        })
-        .await??;
-
-        Ok((map, "Local DB".to_string()))
-    }
-
-    pub async fn get_screen_heatmap(&self, period: &str) -> Result<Vec<Vec<u64>>> {
-        let period_owned = period.to_string();
-
-        let grid = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<u64>>> {
-            let db = crate::db::Database::new()?;
-            let points = db.get_mouse_points(&period_owned)?;
-
-            if points.is_empty() {
-                return Ok(Vec::new());
-            }
-
-            let mut min_x = f64::MAX;
-            let mut max_x = f64::MIN;
-            let mut min_y = f64::MAX;
-            let mut max_y = f64::MIN;
-
-            for (x, y) in &points {
-                if *x < min_x {
-                    min_x = *x;
-                }
-                if *x > max_x {
-                    max_x = *x;
-                }
-                if *y < min_y {
-                    min_y = *y;
-                }
-                if *y > max_y {
-                    max_y = *y;
-                }
-            }
-
-            // Heuristic: If values are normalized (0.0-1.0), use 0-1 bounds to preserve screen context
-            // Otherwise use observed bounds (auto-zoom)
-            let is_normalized = min_x >= 0.0 && max_x <= 1.0 && min_y >= 0.0 && max_y <= 1.0;
-
-            let (use_min_x, use_max_x, use_min_y, use_max_y) = if is_normalized {
-                (0.0, 1.0, 0.0, 1.0)
-            } else {
-                (min_x, max_x, min_y, max_y)
-            };
-
-            // Grid size: 320x200 (approx VGA resolution, good for TUI)
-            let grid_w = 320;
-            let grid_h = 200;
-            let mut grid = vec![vec![0u64; grid_w]; grid_h];
-
-            let width = use_max_x - use_min_x;
-            let height = use_max_y - use_min_y;
-
-            if width <= 0.0 || height <= 0.0 {
-                return Ok(grid);
-            }
-
-            for (x, y) in points {
-                let norm_x = (x - use_min_x) / width;
-                let norm_y = (y - use_min_y) / height;
-
-                // Clamp to [0, 1] just in case floating point errors or outlier if not normalized
-                let norm_x = norm_x.clamp(0.0, 1.0);
-                let norm_y = norm_y.clamp(0.0, 1.0);
-
-                let gx = (norm_x * (grid_w as f64 - 1.0)).round() as usize;
-                let gy = (norm_y * (grid_h as f64 - 1.0)).round() as usize;
-
-                if gx < grid_w && gy < grid_h {
-                    grid[gy][gx] += 1;
-                }
-            }
-
-            Ok(grid)
-        })
-        .await??;
-
-        Ok(grid)
     }
 }
 

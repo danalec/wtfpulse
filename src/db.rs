@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use directories::BaseDirs;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -202,24 +202,103 @@ impl Database {
         Ok(map)
     }
 
-    pub fn get_mouse_points(&self, period: &str) -> Result<Vec<(f64, f64)>> {
+    pub fn get_mouse_heatmap_grid(
+        &self,
+        period: &str,
+        grid_w: usize,
+        grid_h: usize,
+    ) -> Result<Vec<Vec<u64>>> {
         let conn = self.get_connection()?;
         let where_clause = self.get_where_clause(period);
 
-        let sql = format!("SELECT x, y FROM mousepoints {}", where_clause);
+        // 1. Get Bounds
+        let sql_bounds = format!(
+            "SELECT MIN(x), MAX(x), MIN(y), MAX(y) FROM mousepoints {}",
+            where_clause
+        );
 
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| {
-            let x: f64 = row.get(0)?;
-            let y: f64 = row.get(1)?;
-            Ok((x, y))
-        })?;
+        let bounds: Option<(f64, f64, f64, f64)> = conn
+            .query_row(&sql_bounds, [], |row| {
+                Ok((
+                    row.get::<_, Option<f64>>(0)?.unwrap_or(0.0),
+                    row.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+                    row.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+                    row.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+                ))
+            })
+            .optional()?;
 
-        let mut points = Vec::new();
-        for row in rows {
-            points.push(row?);
+        let (min_x, max_x, min_y, max_y) = match bounds {
+            Some(b) => b,
+            None => return Ok(vec![vec![0; grid_w]; grid_h]),
+        };
+
+        // Normalize if needed (like the original code did, though logic was slightly weird)
+        let is_normalized = min_x >= 0.0 && max_x <= 1.0 && min_y >= 0.0 && max_y <= 1.0;
+        let (use_min_x, use_max_x, use_min_y, use_max_y) = if is_normalized {
+            (0.0, 1.0, 0.0, 1.0)
+        } else {
+            (min_x, max_x, min_y, max_y)
+        };
+
+        let width = use_max_x - use_min_x;
+        let height = use_max_y - use_min_y;
+
+        if width <= 0.0 || height <= 0.0 {
+            return Ok(vec![vec![0; grid_w]; grid_h]);
         }
-        Ok(points)
+
+        // 2. Aggregate in SQL
+        // We cast to int to get bin indices.
+        // bin_x = cast((x - min_x) / width * (grid_w - 1))
+
+        let sql_agg = format!(
+            "SELECT 
+                CAST((x - ?) / ? * ? AS INTEGER) as bin_x,
+                CAST((y - ?) / ? * ? AS INTEGER) as bin_y,
+                COUNT(*) as count
+             FROM mousepoints 
+             {}
+             GROUP BY 1, 2",
+            where_clause
+        );
+
+        let mut stmt = conn.prepare(&sql_agg)?;
+        let grid_w_f = (grid_w as f64) - 1.0; // Use grid_w - 1 to map 1.0 inclusive to last index? Or just grid_w and clamp?
+        // Original code: (norm_x * (grid_w - 1)).round()
+        // Let's match original logic: (x - min) / width * (grid_w - 1)
+
+        // Note: SQLite might return indices out of bounds if floating point errors occur or max_x is exactly hit?
+        // We should clamp in Rust or handle carefully.
+
+        let rows = stmt.query_map(
+            [
+                use_min_x,
+                width,
+                grid_w_f,
+                use_min_y,
+                height,
+                (grid_h as f64) - 1.0,
+            ],
+            |row| {
+                let bx: i64 = row.get(0)?;
+                let by: i64 = row.get(1)?;
+                let c: i64 = row.get(2)?;
+                Ok((bx, by, c))
+            },
+        )?;
+
+        let mut grid = vec![vec![0u64; grid_w]; grid_h];
+
+        for row in rows {
+            let (bx, by, count) = row?;
+            // Clamp just in case
+            let x_idx = (bx as usize).clamp(0, grid_w - 1);
+            let y_idx = (by as usize).clamp(0, grid_h - 1);
+            grid[y_idx][x_idx] += count as u64;
+        }
+
+        Ok(grid)
     }
 
     pub fn get_app_stats(&self, period: &str) -> Result<Vec<AppStats>> {

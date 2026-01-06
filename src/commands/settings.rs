@@ -28,6 +28,7 @@ impl SettingsPage {
 inventory::submit! {
     TuiPage {
         title: "Settings",
+        category: "Settings",
         render: SettingsPage::render,
         handle_key: SettingsPage::handle_key,
         handle_mouse: SettingsPage::handle_mouse,

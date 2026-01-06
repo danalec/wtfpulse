@@ -15,6 +15,7 @@ use layouts::{KEY_HEIGHT, KeyboardLayout};
 inventory::submit! {
     TuiPage {
         title: "Keyboard",
+        category: "Input",
         render: render_tui,
         handle_key,
         handle_mouse: crate::commands::default_handle_mouse,
@@ -26,34 +27,33 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     if app.date_picker.open {
         crate::tui::period_utils::handle_date_picker_key(app, key);
         if !app.date_picker.open {
-            // If closed, fetch heatmap with new range if custom
             fetch_heatmap(app);
         }
         return true;
     }
 
-    if app.show_layout_popup {
+    if app.keyboard.show_layout_popup {
         match key.code {
             KeyCode::Esc => {
-                app.show_layout_popup = false;
-                app.layout_search_query.clear();
+                app.keyboard.show_layout_popup = false;
+                app.keyboard.layout_search_query.clear();
                 return true;
             }
             KeyCode::Enter => {
-                if let Some(selected_idx) = app.layout_list_state.get_mut().selected() {
+                if let Some(selected_idx) = app.keyboard.layout_list_state.get_mut().selected() {
                     let filtered: Vec<KeyboardLayout> = KeyboardLayout::all()
                         .into_iter()
                         .filter(|l| {
                             l.to_string()
                                 .to_lowercase()
-                                .contains(&app.layout_search_query.to_lowercase())
+                                .contains(&app.keyboard.layout_search_query.to_lowercase())
                         })
                         .collect();
 
                     if let Some(layout) = filtered.get(selected_idx) {
-                        app.keyboard_layout = *layout;
-                        app.show_layout_popup = false;
-                        app.layout_search_query.clear();
+                        app.keyboard.layout = *layout;
+                        app.keyboard.show_layout_popup = false;
+                        app.keyboard.layout_search_query.clear();
                     }
                 }
                 return true;
@@ -64,12 +64,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                     .filter(|l| {
                         l.to_string()
                             .to_lowercase()
-                            .contains(&app.layout_search_query.to_lowercase())
+                            .contains(&app.keyboard.layout_search_query.to_lowercase())
                     })
                     .count();
 
                 if filtered_count > 0 {
-                    let i = match app.layout_list_state.get_mut().selected() {
+                    let i = match app.keyboard.layout_list_state.get_mut().selected() {
                         Some(i) => {
                             if i == 0 {
                                 filtered_count - 1
@@ -79,7 +79,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                         }
                         None => 0,
                     };
-                    app.layout_list_state.get_mut().select(Some(i));
+                    app.keyboard.layout_list_state.get_mut().select(Some(i));
                 }
                 return true;
             }
@@ -89,12 +89,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                     .filter(|l| {
                         l.to_string()
                             .to_lowercase()
-                            .contains(&app.layout_search_query.to_lowercase())
+                            .contains(&app.keyboard.layout_search_query.to_lowercase())
                     })
                     .count();
 
                 if filtered_count > 0 {
-                    let i = match app.layout_list_state.get_mut().selected() {
+                    let i = match app.keyboard.layout_list_state.get_mut().selected() {
                         Some(i) => {
                             if i >= filtered_count - 1 {
                                 0
@@ -104,12 +104,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                         }
                         None => 0,
                     };
-                    app.layout_list_state.get_mut().select(Some(i));
+                    app.keyboard.layout_list_state.get_mut().select(Some(i));
                 }
                 return true;
             }
             KeyCode::Home => {
-                app.layout_list_state.get_mut().select(Some(0));
+                app.keyboard.layout_list_state.get_mut().select(Some(0));
                 return true;
             }
             KeyCode::End => {
@@ -118,20 +118,26 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                     .filter(|l| {
                         l.to_string()
                             .to_lowercase()
-                            .contains(&app.layout_search_query.to_lowercase())
+                            .contains(&app.keyboard.layout_search_query.to_lowercase())
                     })
                     .count();
                 if filtered_count > 0 {
-                    app.layout_list_state
+                    app.keyboard
+                        .layout_list_state
                         .get_mut()
                         .select(Some(filtered_count - 1));
                 }
                 return true;
             }
             KeyCode::PageUp => {
-                let current = app.layout_list_state.get_mut().selected().unwrap_or(0);
+                let current = app
+                    .keyboard
+                    .layout_list_state
+                    .get_mut()
+                    .selected()
+                    .unwrap_or(0);
                 let next = current.saturating_sub(5);
-                app.layout_list_state.get_mut().select(Some(next));
+                app.keyboard.layout_list_state.get_mut().select(Some(next));
                 return true;
             }
             KeyCode::PageDown => {
@@ -140,28 +146,33 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                     .filter(|l| {
                         l.to_string()
                             .to_lowercase()
-                            .contains(&app.layout_search_query.to_lowercase())
+                            .contains(&app.keyboard.layout_search_query.to_lowercase())
                     })
                     .count();
                 if filtered_count > 0 {
-                    let current = app.layout_list_state.get_mut().selected().unwrap_or(0);
+                    let current = app
+                        .keyboard
+                        .layout_list_state
+                        .get_mut()
+                        .selected()
+                        .unwrap_or(0);
                     let next = if current + 5 < filtered_count {
                         current + 5
                     } else {
                         filtered_count - 1
                     };
-                    app.layout_list_state.get_mut().select(Some(next));
+                    app.keyboard.layout_list_state.get_mut().select(Some(next));
                 }
                 return true;
             }
             KeyCode::Char(c) => {
-                app.layout_search_query.push(c);
-                app.layout_list_state.get_mut().select(Some(0)); // Reset selection on search
+                app.keyboard.layout_search_query.push(c);
+                app.keyboard.layout_list_state.get_mut().select(Some(0)); // Reset selection on search
                 return true;
             }
             KeyCode::Backspace => {
-                app.layout_search_query.pop();
-                app.layout_list_state.get_mut().select(Some(0)); // Reset selection on search
+                app.keyboard.layout_search_query.pop();
+                app.keyboard.layout_list_state.get_mut().select(Some(0)); // Reset selection on search
                 return true;
             }
             _ => return true,
@@ -170,8 +181,8 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
 
     match key.code {
         KeyCode::Char('k') => {
-            app.show_layout_popup = true;
-            app.layout_search_query.clear();
+            app.keyboard.show_layout_popup = true;
+            app.keyboard.layout_search_query.clear();
             true
         }
         KeyCode::Char('h') => {
@@ -252,7 +263,7 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
     render_keyboard(f, app, chunks[1]);
     render_footer(f, app, chunks[2]);
 
-    if app.show_layout_popup {
+    if app.keyboard.show_layout_popup {
         render_layout_popup(f, app, area);
     }
 
@@ -282,7 +293,7 @@ fn render_layout_popup(f: &mut Frame, app: &App, area: Rect) {
         .split(popup_area);
 
     // Search Bar
-    let search_text = format!("Search: {}", app.layout_search_query);
+    let search_text = format!("Search: {}", app.keyboard.layout_search_query);
     let search_p = Paragraph::new(search_text)
         .block(Block::default().borders(Borders::BOTTOM))
         .style(Style::default().fg(Color::Cyan));
@@ -294,7 +305,7 @@ fn render_layout_popup(f: &mut Frame, app: &App, area: Rect) {
         .filter(|l| {
             l.to_string()
                 .to_lowercase()
-                .contains(&app.layout_search_query.to_lowercase())
+                .contains(&app.keyboard.layout_search_query.to_lowercase())
         })
         .collect();
 
@@ -313,7 +324,7 @@ fn render_layout_popup(f: &mut Frame, app: &App, area: Rect) {
         )
         .highlight_symbol(">> ");
 
-    let mut list_state = app.layout_list_state.borrow_mut();
+    let mut list_state = app.keyboard.layout_list_state.borrow_mut();
     f.render_stateful_widget(list, chunks[1], &mut *list_state);
 }
 
@@ -385,8 +396,8 @@ fn render_statistics(f: &mut Frame, area: Rect) {
 
 fn render_keyboard(f: &mut Frame, app: &App, area: Rect) {
     // Combine API data with session data
-    let mut data = app.heatmap_data.clone();
-    for (k, v) in &app.session_heatmap {
+    let mut data = app.keyboard.heatmap_data.clone();
+    for (k, v) in &app.keyboard.session_heatmap {
         *data.entry(k.clone()).or_insert(0) += v;
     }
 
@@ -417,7 +428,7 @@ fn render_keyboard(f: &mut Frame, app: &App, area: Rect) {
         area.y
     };
 
-    for key in app.keyboard_layout.get_keys() {
+    for key in app.keyboard.layout.get_keys() {
         // Calculate absolute position
         let x = x_offset + key.x;
         let y = y_offset + key.y;
@@ -478,7 +489,7 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     };
     let layout_text = format!(
         " Layout: {} (k) | Period: {} (h/l | /: Custom)",
-        app.keyboard_layout, period_str
+        app.keyboard.layout, period_str
     );
     let p_controls = Paragraph::new(layout_text)
         .block(Block::default().borders(Borders::TOP))
@@ -495,10 +506,22 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         f.render_widget(p_err, chunks[1]);
     } else {
         // Show Status
-        let map_len = app.heatmap_data.len();
-        let max_val = app.heatmap_data.values().max().copied().unwrap_or(0);
-        let session_len = app.session_heatmap.len();
-        let session_max = app.session_heatmap.values().max().copied().unwrap_or(0);
+        let map_len = app.keyboard.heatmap_data.len();
+        let max_val = app
+            .keyboard
+            .heatmap_data
+            .values()
+            .max()
+            .copied()
+            .unwrap_or(0);
+        let session_len = app.keyboard.session_heatmap.len();
+        let session_max = app
+            .keyboard
+            .session_heatmap
+            .values()
+            .max()
+            .copied()
+            .unwrap_or(0);
 
         // Show full source string (includes error if fallback occurred)
         let source_str = &app.data_source;

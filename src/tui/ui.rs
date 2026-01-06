@@ -21,8 +21,13 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     tabs::render(f, app, chunks[0]);
 
-    if let Some(page) = get_pages().get(app.current_tab) {
+    if let Some(page) = get_pages().get(app.nav.current_tab) {
         (page.render)(f, app, chunks[1]);
+    }
+
+    // Render Navigation Menu Popup (Last, to ensure it overlays page content)
+    if app.nav.menu_open {
+        tabs::render_nav_popup(f, app, chunks[0]);
     }
 
     if app.date_picker.open {
@@ -61,6 +66,29 @@ pub fn draw(f: &mut Frame, app: &App) {
         let p = Paragraph::new(msg.clone())
             .block(block)
             .style(Style::default().fg(Color::White))
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(p, area);
+    }
+
+    // Render Quit Confirmation (Highest Priority)
+    if app.nav.show_quit_confirm {
+        let area = centered_fixed_area(60, 5, f.area());
+        f.render_widget(Clear, area);
+
+        let block = Block::default()
+            .title(" Quit? ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Red));
+
+        let p = Paragraph::new("Are you sure? ( Enter to Confirm, Esc to Cancel)")
+            .block(block)
+            .style(
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: true });
 

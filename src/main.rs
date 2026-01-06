@@ -20,6 +20,9 @@ use config::AppConfig;
 #[command(name = "wtfpulse")]
 #[command(about = "A WhatPulse Web API client", long_about = None)]
 struct Cli {
+    #[arg(long, help = "Disable API connection and use local mode only")]
+    no_api: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -43,7 +46,12 @@ async fn main() -> Result<()> {
     });
 
     // Determine API Key: Env Var > Config File
-    let api_key = env::var("WHATPULSE_API_KEY").ok().or(config.api_key);
+    // If --no-api is passed, we ignore the key to force local mode
+    let api_key = if args.no_api {
+        None
+    } else {
+        env::var("WHATPULSE_API_KEY").ok().or(config.api_key)
+    };
 
     let client = match api_key {
         Some(key) if !key.is_empty() => WhatpulseClient::new(&key).await?,

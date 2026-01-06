@@ -20,6 +20,7 @@ use ratatui::{
 inventory::submit! {
     TuiPage {
         title: "Calorimetry",
+        category: "Toys",
         render: render_tui,
         handle_key,
         handle_mouse: crate::commands::default_handle_mouse,
@@ -29,7 +30,7 @@ inventory::submit! {
 
 fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     if let KeyCode::Char('p') = key.code {
-        app.profile_index = (app.profile_index + 1) % app.profiles.len();
+        app.keyboard.profile_index = (app.keyboard.profile_index + 1) % app.keyboard.profiles.len();
         app.recalculate_energy();
         return true;
     }

@@ -41,7 +41,7 @@ pub fn get_display_period(period: TimePeriod) -> &'static str {
     }
 }
 
-fn cycle_period_next(p: TimePeriod) -> TimePeriod {
+pub fn cycle_period_next(p: TimePeriod) -> TimePeriod {
     match p {
         TimePeriod::Today => TimePeriod::Yesterday,
         TimePeriod::Yesterday => TimePeriod::Week,
@@ -53,7 +53,7 @@ fn cycle_period_next(p: TimePeriod) -> TimePeriod {
     }
 }
 
-fn cycle_period_prev(p: TimePeriod) -> TimePeriod {
+pub fn cycle_period_prev(p: TimePeriod) -> TimePeriod {
     match p {
         TimePeriod::Today => TimePeriod::Custom,
         TimePeriod::Yesterday => TimePeriod::Today,
@@ -67,8 +67,8 @@ fn cycle_period_prev(p: TimePeriod) -> TimePeriod {
 
 pub fn fetch_stats(app: &App, target: StatsTarget) {
     let period = match target {
-        StatsTarget::Applications => app.app_stats_period,
-        StatsTarget::Network => app.network_stats_period,
+        StatsTarget::Applications => app.apps.period,
+        StatsTarget::Network => app.network.period,
     };
     let period_str = get_period_string(period, app);
     match target {
@@ -168,13 +168,13 @@ pub fn handle_period_nav(app: &mut App, key: KeyEvent, target: StatsTarget) -> b
     match key.code {
         KeyCode::Char('h') => {
             let current = match target {
-                StatsTarget::Applications => app.app_stats_period,
-                StatsTarget::Network => app.network_stats_period,
+                StatsTarget::Applications => app.apps.period,
+                StatsTarget::Network => app.network.period,
             };
             let new_period = cycle_period_prev(current);
             match target {
-                StatsTarget::Applications => app.app_stats_period = new_period,
-                StatsTarget::Network => app.network_stats_period = new_period,
+                StatsTarget::Applications => app.apps.period = new_period,
+                StatsTarget::Network => app.network.period = new_period,
             };
 
             if new_period != TimePeriod::Custom {
@@ -184,13 +184,13 @@ pub fn handle_period_nav(app: &mut App, key: KeyEvent, target: StatsTarget) -> b
         }
         KeyCode::Char('l') => {
             let current = match target {
-                StatsTarget::Applications => app.app_stats_period,
-                StatsTarget::Network => app.network_stats_period,
+                StatsTarget::Applications => app.apps.period,
+                StatsTarget::Network => app.network.period,
             };
             let new_period = cycle_period_next(current);
             match target {
-                StatsTarget::Applications => app.app_stats_period = new_period,
-                StatsTarget::Network => app.network_stats_period = new_period,
+                StatsTarget::Applications => app.apps.period = new_period,
+                StatsTarget::Network => app.network.period = new_period,
             };
 
             if new_period != TimePeriod::Custom {
@@ -200,8 +200,8 @@ pub fn handle_period_nav(app: &mut App, key: KeyEvent, target: StatsTarget) -> b
         }
         KeyCode::Char('/') => {
             match target {
-                StatsTarget::Applications => app.app_stats_period = TimePeriod::Custom,
-                StatsTarget::Network => app.network_stats_period = TimePeriod::Custom,
+                StatsTarget::Applications => app.apps.period = TimePeriod::Custom,
+                StatsTarget::Network => app.network.period = TimePeriod::Custom,
             };
             app.date_picker.open = true;
             app.date_picker.selection_step = SelectionStep::Start;

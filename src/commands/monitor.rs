@@ -27,6 +27,7 @@ const HEALTH_LIMIT_JOULES_PER_HOUR: f64 = 50.0; // Approx 70 WPM sustained
 inventory::submit! {
     TuiPage {
         title: "Kinetic",
+        category: "Toys",
         render: render_tui,
         handle_key,
         handle_mouse: crate::commands::default_handle_mouse,
@@ -161,36 +162,26 @@ pub async fn spawn_monitor_task(
                         msg = read.next() => {
                             match msg {
                                 Some(Ok(Message::Text(text))) => {
-                                    // Try to parse as JSON Value first for debugging
                                     if let Ok(_val) = serde_json::from_str::<serde_json::Value>(&text) {
-                                         // let _ = tx.send(Action::DebugInfo(format!("RX: {}", val))).await;
                                     }
 
                                     match serde_json::from_str::<WpWebSocketMsg>(&text) {
                                         Ok(msg) => {
                                             if msg.action == "update-status" {
                                                 if let Some(data) = msg.data {
-                                                    // Parse Realtime KPS
                                                     let kps = if let Some(rt) = data.realtime {
                                                         parse_localized_float(&rt.keys)
                                                     } else {
                                                         0.0
                                                     };
 
-                                                    // Parse Unpulsed Stats
                                                     let (keys, clicks, scrolls) = if let Some(up) = data.unpulsed {
                                                         (up.keys, up.clicks, up.scrolls)
                                                     } else {
                                                         (0, 0, 0)
                                                     };
 
-                                                    // We can update last_time/last_keys if we want to verify KPS,
-                                                    // but let's trust the API for now or use unpulsed for accumulated work.
-
-                                                    // Parse Heatmap
                                                     let heatmap = data.heatmap.unwrap_or_default();
-
-                                                    // Update TUI
                                                     let _ = tx.send(Action::RealtimeUpdate(RealtimeData {
                                                         unpulsed_keys: keys,
                                                         unpulsed_clicks: clicks,
@@ -204,9 +195,6 @@ pub async fn spawn_monitor_task(
                                             }
                                         }
                                         Err(e) => {
-                                            // It might be a simple response message like { "msg": "Pulse executed." }
-                                            // or { "source": "plugin", "action": "identify" } echo?
-                                            // Let's log it but not fail hard.
                                             let _ = tx.send(Action::DebugInfo(format!("JSON Parse Error: {} | Raw: {}", e, text))).await;
                                         }
                                     }
@@ -231,12 +219,10 @@ pub async fn spawn_monitor_task(
                                 };
                                 let req_json = serde_json::to_string(&req).unwrap();
 
-                                // let _ = tx.send(Action::DebugInfo(format!("Sending command: {}", action_str))).await;
                                 if let Err(e) = write.send(Message::Text(req_json.into())).await {
                                      let _ = tx.send(Action::DebugInfo(format!("Send failed: {}", e))).await;
                                 }
                             } else {
-                                // Channel closed
                                 break;
                             }
                         }
@@ -299,7 +285,7 @@ fn render_tui(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let header = Paragraph::new(Line::from(vec![
-        Span::raw("Kinetic Dashboard | "),
+        Span::raw("Kinetic Overview | "),
         Span::styled(status_text, Style::default().fg(status_color)),
         Span::raw(format!(
             " | Profile: {} ({:.1}cN, {:.1}mm)",
@@ -451,7 +437,8 @@ fn render_tui(f: &mut Frame, app: &App, area: Rect) {
 fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     match key.code {
         KeyCode::Char('p') => {
-            app.profile_index = (app.profile_index + 1) % app.profiles.len();
+            app.keyboard.profile_index =
+                (app.keyboard.profile_index + 1) % app.keyboard.profiles.len();
             true
         }
         KeyCode::Char('u') => {

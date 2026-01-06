@@ -16,6 +16,7 @@ use ratatui::{
 inventory::submit! {
     TuiPage {
         title: "Pulses",
+        category: "Account",
         render: render_tui,
         handle_key,
         handle_mouse,

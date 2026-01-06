@@ -14,6 +14,7 @@ use widget::AsciiHeatmap;
 inventory::submit! {
     TuiPage {
         title: "Mouse",
+        category: "Input",
         render: render_tui,
         handle_key,
         handle_mouse,
@@ -25,7 +26,7 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) -> bool {
     use crossterm::event::MouseEventKind;
     match event.kind {
         MouseEventKind::ScrollDown => {
-            app.mouse_period = match app.mouse_period {
+            app.mouse.period = match app.mouse.period {
                 TimePeriod::Today => TimePeriod::Yesterday,
                 TimePeriod::Yesterday => TimePeriod::Week,
                 TimePeriod::Week => TimePeriod::Month,
@@ -34,13 +35,13 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) -> bool {
                 TimePeriod::All => TimePeriod::Custom,
                 TimePeriod::Custom => TimePeriod::Today,
             };
-            if app.mouse_period != TimePeriod::Custom {
+            if app.mouse.period != TimePeriod::Custom {
                 fetch_mouse_heatmap(app);
             }
             true
         }
         MouseEventKind::ScrollUp => {
-            app.mouse_period = match app.mouse_period {
+            app.mouse.period = match app.mouse.period {
                 TimePeriod::Today => TimePeriod::Custom,
                 TimePeriod::Custom => TimePeriod::All,
                 TimePeriod::All => TimePeriod::Year,
@@ -49,7 +50,7 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) -> bool {
                 TimePeriod::Week => TimePeriod::Yesterday,
                 TimePeriod::Yesterday => TimePeriod::Today,
             };
-            if app.mouse_period != TimePeriod::Custom {
+            if app.mouse.period != TimePeriod::Custom {
                 fetch_mouse_heatmap(app);
             }
             true
@@ -68,10 +69,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         return true;
     }
 
-    if app.show_mouse_stats {
+    if app.mouse.show_stats {
         if key.code == KeyCode::Esc || key.code == KeyCode::Char('m') || key.code == KeyCode::Enter
         {
-            app.show_mouse_stats = false;
+            app.mouse.show_stats = false;
         }
         return true;
     }
@@ -79,11 +80,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     match key.code {
         KeyCode::Esc => true,
         KeyCode::Char('m') => {
-            app.show_mouse_stats = true;
+            app.mouse.show_stats = true;
             true
         }
         KeyCode::Char('h') => {
-            app.mouse_period = match app.mouse_period {
+            app.mouse.period = match app.mouse.period {
                 TimePeriod::Today => TimePeriod::Yesterday,
                 TimePeriod::Yesterday => TimePeriod::Week,
                 TimePeriod::Week => TimePeriod::Month,
@@ -92,13 +93,13 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                 TimePeriod::All => TimePeriod::Custom,
                 TimePeriod::Custom => TimePeriod::Today,
             };
-            if app.mouse_period != TimePeriod::Custom {
+            if app.mouse.period != TimePeriod::Custom {
                 fetch_mouse_heatmap(app);
             }
             true
         }
         KeyCode::Char('l') => {
-            app.mouse_period = match app.mouse_period {
+            app.mouse.period = match app.mouse.period {
                 TimePeriod::Today => TimePeriod::Custom,
                 TimePeriod::Custom => TimePeriod::All,
                 TimePeriod::All => TimePeriod::Year,
@@ -107,12 +108,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
                 TimePeriod::Week => TimePeriod::Yesterday,
                 TimePeriod::Yesterday => TimePeriod::Today,
             };
-            if app.mouse_period != TimePeriod::Custom {
+            if app.mouse.period != TimePeriod::Custom {
                 fetch_mouse_heatmap(app);
             }
             true
         }
-        KeyCode::Char('/') | KeyCode::Enter if app.mouse_period == TimePeriod::Custom => {
+        KeyCode::Char('/') | KeyCode::Enter if app.mouse.period == TimePeriod::Custom => {
             app.date_picker.open = true;
             app.date_picker.selection_step = SelectionStep::Start;
             // Initialize selection to today if not set, or keep current
@@ -126,7 +127,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
 }
 
 fn fetch_mouse_heatmap(app: &App) {
-    let period_str = match app.mouse_period {
+    let period_str = match app.mouse.period {
         TimePeriod::Today => "today".to_string(),
         TimePeriod::Yesterday => "yesterday".to_string(),
         TimePeriod::Week => "week".to_string(),
@@ -157,7 +158,7 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
     let heatmap_area = chunks[0];
     let footer_area = chunks[1];
 
-    let data = &app.screen_heatmap_data;
+    let data = &app.mouse.screen_heatmap;
 
     if !data.is_empty() {
         let heatmap = AsciiHeatmap::new(data)
@@ -178,7 +179,7 @@ pub fn render_tui(f: &mut Frame, app: &App, area: Rect) {
         crate::tui::ui::render_date_picker(f, app, area);
     }
 
-    if app.show_mouse_stats {
+    if app.mouse.show_stats {
         render_mouse_stats_popup(f, app, area);
     }
 }
@@ -205,7 +206,7 @@ fn render_mouse_stats_popup(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(inner);
 
-    let stats = &app.mouse_stats;
+    let stats = &app.mouse.stats;
     let text = [
         format!("Today:     {:>6}", stats.today.clicks),
         format!("Yesterday: {:>6}", stats.yesterday.clicks),
@@ -213,7 +214,12 @@ fn render_mouse_stats_popup(f: &mut Frame, app: &App, area: Rect) {
         format!("All Time:  {:>6}", stats.all_time.clicks),
         String::new(),
         format!("Scrolls:   {:>6}", stats.all_time.scrolls),
-        format!("Dist:      {:.2}m", stats.all_time.distance_meters),
+        {
+            let dist = stats.all_time.distance_meters;
+            let m = dist.floor();
+            let cm = ((dist - m) * 100.0).round();
+            format!("Dist:      {:.0}m,{:.0}cm", m, cm)
+        },
     ]
     .join("\n");
 
@@ -221,15 +227,18 @@ fn render_mouse_stats_popup(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(p, chunks[0]);
 
     // Mouse Art
-    let total = stats.all_time.clicks as f64;
     let buttons = &stats.all_time.clicks_by_button;
     let l = *buttons.get(&1).unwrap_or(&0) as f64;
     let m = *buttons.get(&2).unwrap_or(&0) as f64;
     let r = *buttons.get(&3).unwrap_or(&0) as f64;
 
-    let lp = if total > 0.0 { l / total * 100.0 } else { 0.0 };
-    let mp = if total > 0.0 { m / total * 100.0 } else { 0.0 };
-    let rp = if total > 0.0 { r / total * 100.0 } else { 0.0 };
+    // Normalize percentages to the 3 displayed buttons
+    // The user doesn't see side buttons here, so L+M+R should sum to 100%
+    let sum = l + m + r;
+
+    let lp = if sum > 0.0 { l / sum * 100.0 } else { 0.0 };
+    let mp = if sum > 0.0 { m / sum * 100.0 } else { 0.0 };
+    let rp = if sum > 0.0 { r / sum * 100.0 } else { 0.0 };
 
     let l_str = format!("{:.0}%", lp);
     let m_str = format!("{:.0}%", mp);
@@ -255,7 +264,7 @@ fn render_mouse_stats_popup(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_footer(f: &mut Frame, app: &App, area: Rect) {
-    let period_str = match app.mouse_period {
+    let period_str = match app.mouse.period {
         TimePeriod::Today => "Today",
         TimePeriod::Yesterday => "Yesterday",
         TimePeriod::Week => "Week",

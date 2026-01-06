@@ -13,7 +13,7 @@ pub mod landmarks;
 pub use landmarks::LANDMARKS;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
-    let current_height = app.scroll_meters;
+    let current_height = app.mouse.scroll_meters;
 
     // -------------------------------------------------------------------------
     // Helper: Dynamic Atmosphere Color
@@ -125,7 +125,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     // 5. Footer
     let stats_desc = active_landmark.description;
-    let mode_text = match app.scroll_mode {
+    let mode_text = match app.mouse.scroll_mode {
         crate::tui::app::ScrollMode::Lifetime => "Lifetime",
         crate::tui::app::ScrollMode::Session => "Session",
     };
@@ -147,6 +147,7 @@ pub fn handle_key(_app: &mut App, _key: KeyEvent) -> bool {
 inventory::submit! {
     TuiPage {
         title: "Scroll Tower",
+        category: "Toys",
         render,
         handle_key,
         handle_mouse: crate::commands::default_handle_mouse,

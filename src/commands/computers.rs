@@ -14,6 +14,7 @@ use ratatui::{
 inventory::submit! {
     TuiPage {
         title: "Computers",
+        category: "Account",
         render: render_tui,
         handle_key,
         handle_mouse: crate::commands::default_handle_mouse,

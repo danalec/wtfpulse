@@ -4,6 +4,10 @@ use crate::commands::get_pages;
 use crate::commands::keyboard::layouts::KeyboardLayout;
 use crate::commands::keyboard::layouts::get_api_key_from_char;
 use crate::db::{AppStats, MouseStats, NetworkStats};
+pub use crate::tui::state::{
+    AppSortMode, AppsState, ExtendedMouseStats, KeyboardState, MouseState, NavigationState,
+    NetworkSortMode, NetworkState, ScrollMode, SortOrder, TimePeriod, UnitSystem,
+};
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -13,33 +17,6 @@ use log::info;
 use std::collections::HashMap;
 
 use std::cell::RefCell;
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum SortOrder {
-    #[default]
-    Descending,
-    Ascending,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum AppSortMode {
-    #[default]
-    Keys,
-    Clicks,
-    Scrolls,
-    Download,
-    Upload,
-    Name,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum NetworkSortMode {
-    #[default]
-    Download,
-    Upload,
-    Total,
-    Interface,
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct KineticStats {
@@ -141,14 +118,6 @@ pub struct RealtimeData {
     pub heatmap: HashMap<String, u64>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ExtendedMouseStats {
-    pub today: MouseStats,
-    pub yesterday: MouseStats,
-    pub all_time: MouseStats,
-    pub unpulsed: MouseStats,
-}
-
 pub enum Action {
     Tick,
     Quit,
@@ -178,25 +147,6 @@ pub enum Action {
 
 use chrono::{Local, NaiveDate};
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum UnitSystem {
-    #[default]
-    Metric, // Meters (m/s)
-    Centimeters, // Centimeters (cm/s)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum TimePeriod {
-    Today,
-    Yesterday,
-    Week,
-    Month,
-    Year,
-    #[default]
-    All,
-    Custom,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatePickerState {
     pub open: bool,
@@ -224,13 +174,6 @@ impl Default for DatePickerState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum ScrollMode {
-    #[default]
-    Lifetime,
-    Session,
-}
-
 #[derive(Debug, Clone)]
 pub enum MonitorCommand {
     Pulse,
@@ -247,50 +190,32 @@ pub struct App {
     pub computers_loading: bool,
     pub error: Option<String>,
     pub pulses_error: Option<String>,
-    pub current_tab: usize,
     pub client: WhatpulseClient,
     pub tx: mpsc::Sender<Action>,
     pub monitor_tx: Option<mpsc::Sender<MonitorCommand>>,
-    pub profiles: Vec<SwitchProfile>,
-    pub profile_index: usize,
+
+    // Sub-states
+    pub nav: NavigationState,
+    pub mouse: MouseState,
+    pub keyboard: KeyboardState,
+    pub apps: AppsState,
+    pub network: NetworkState,
+
     pub dashboard_period: TimePeriod,
     pub date_picker: DatePickerState,
     pub kinetic_stats: KineticStats,
     pub unit_system: UnitSystem,
-    pub heatmap_data: HashMap<String, u64>,
-    pub keyboard_layout: KeyboardLayout,
-    pub show_layout_popup: bool,
-    pub layout_search_query: String,
-    pub layout_list_state: RefCell<ratatui::widgets::ListState>,
     pub data_source: String,
-    pub heatmap_error: Option<String>,
+
     pub should_quit: bool,
-    pub scroll_meters: f64,
-    pub scroll_mode: ScrollMode,
-    pub session_start_scrolls: Option<u64>,
-    pub current_total_scrolls: u64,
-    pub session_heatmap: HashMap<String, u64>,
-    pub screen_heatmap_data: Vec<Vec<u64>>,
-    pub mouse_stats: ExtendedMouseStats,
-    pub show_mouse_stats: bool,
-    pub mouse_period: TimePeriod,
-    pub app_stats: Vec<AppStats>,
-    pub app_stats_period: TimePeriod,
-    pub app_sort_mode: AppSortMode,
-    pub app_sort_order: SortOrder,
-    pub network_stats: Vec<NetworkStats>,
-    pub network_stats_period: TimePeriod,
-    pub network_sort_mode: NetworkSortMode,
-    pub network_sort_order: SortOrder,
     pub pulses_table_state: RefCell<ratatui::widgets::TableState>,
-    pub apps_table_state: RefCell<ratatui::widgets::TableState>,
-    pub network_table_state: RefCell<ratatui::widgets::TableState>,
     pub last_refresh: std::time::Instant,
     pub refresh_rate: std::time::Duration,
     pub config: crate::config::AppConfig,
     pub is_editing_api_key: bool,
     pub api_key_input: String,
     pub notification: Option<(String, std::time::Instant)>,
+    pub uptime_period: TimePeriod,
 }
 
 impl App {
@@ -309,55 +234,33 @@ impl App {
             computers_loading: true,
             error: None,
             pulses_error: None,
-            current_tab: 0,
             client,
             tx,
             monitor_tx: None,
-            profiles: vec![
-                SwitchProfile::cherry_mx_red(),
-                SwitchProfile::cherry_mx_blue(),
-                SwitchProfile::cherry_mx_brown(),
-                SwitchProfile::membrane(),
-            ],
-            profile_index: 0,
-            dashboard_period: TimePeriod::default(),
+            nav: NavigationState::default(),
+            mouse: MouseState::default(),
+            keyboard: KeyboardState {
+                layout: KeyboardLayout::Qwerty,
+                ..Default::default()
+            },
+            apps: AppsState::default(),
+            network: NetworkState::default(),
+
+            dashboard_period: TimePeriod::All,
             date_picker: DatePickerState::default(),
             kinetic_stats: KineticStats::default(),
-            unit_system: UnitSystem::default(),
-            heatmap_data: HashMap::new(),
-            keyboard_layout: KeyboardLayout::Qwerty,
-            show_layout_popup: false,
-            layout_search_query: String::new(),
-            layout_list_state: RefCell::new(ratatui::widgets::ListState::default()),
-            data_source: String::from("API"),
-            heatmap_error: None,
+            unit_system: UnitSystem::Metric,
+            data_source: String::new(),
+
             should_quit: false,
-            scroll_meters: 0.0,
-            scroll_mode: ScrollMode::default(),
-            session_start_scrolls: None,
-            current_total_scrolls: 0,
-            session_heatmap: HashMap::new(),
-            screen_heatmap_data: Vec::new(),
-            mouse_stats: ExtendedMouseStats::default(),
-            show_mouse_stats: false,
-            mouse_period: TimePeriod::Today,
-            app_stats: Vec::new(),
-            app_stats_period: TimePeriod::All,
-            network_stats: Vec::new(),
-            network_stats_period: TimePeriod::All,
             pulses_table_state: RefCell::new(ratatui::widgets::TableState::default()),
-            apps_table_state: RefCell::new(ratatui::widgets::TableState::default()),
-            network_table_state: RefCell::new(ratatui::widgets::TableState::default()),
-            app_sort_mode: AppSortMode::default(),
-            app_sort_order: SortOrder::default(),
-            network_sort_mode: NetworkSortMode::default(),
-            network_sort_order: SortOrder::default(),
             last_refresh: std::time::Instant::now(),
             refresh_rate,
             config,
             is_editing_api_key: false,
             api_key_input: String::new(),
             notification: None,
+            uptime_period: TimePeriod::All,
         }
     }
 
@@ -382,7 +285,7 @@ impl App {
     }
 
     pub fn current_profile(&self) -> &SwitchProfile {
-        &self.profiles[self.profile_index]
+        &self.keyboard.profiles[self.keyboard.profile_index]
     }
 
     pub fn recalculate_energy(&mut self) {
@@ -393,31 +296,55 @@ impl App {
     }
 
     pub fn recalculate_unpulsed(&mut self) {
-        if let Some(user) = &self.user_stats {
-            // Unpulsed Clicks = AllTime.Clicks - User.Totals.Clicks
-            let total_clicks = self.mouse_stats.all_time.clicks;
-            let pulsed_clicks = user.totals.clicks.unwrap_or(0);
-            let unpulsed_clicks = total_clicks.saturating_sub(pulsed_clicks);
+        let (pulsed_clicks, pulsed_scrolls, pulsed_distance_miles) =
+            if let Some(user) = &self.user_stats {
+                // Try to find local computer first
+                let hostname = std::env::var("COMPUTERNAME")
+                    .or_else(|_| std::env::var("HOSTNAME"))
+                    .unwrap_or_else(|_| "localhost".to_string());
 
-            // Unpulsed Scrolls = AllTime.Scrolls - User.Totals.Scrolls
-            let total_scrolls = self.mouse_stats.all_time.scrolls;
-            let pulsed_scrolls = user.totals.scrolls;
-            let unpulsed_scrolls = total_scrolls.saturating_sub(pulsed_scrolls);
+                let local_comp = self
+                    .computers
+                    .iter()
+                    .find(|c| c.name.eq_ignore_ascii_case(&hostname));
 
-            // Unpulsed Distance = AllTime.DistanceMeters - (User.Totals.DistanceMiles * 1609.34)
-            let total_distance_meters = self.mouse_stats.all_time.distance_meters;
-            let pulsed_distance_miles = user.totals.distance_miles.unwrap_or(0.0);
-            let pulsed_distance_meters = pulsed_distance_miles * 1609.34;
-            let unpulsed_distance_meters =
-                (total_distance_meters - pulsed_distance_meters).max(0.0);
-
-            self.mouse_stats.unpulsed = MouseStats {
-                clicks: unpulsed_clicks,
-                scrolls: unpulsed_scrolls,
-                distance_meters: unpulsed_distance_meters,
-                clicks_by_button: HashMap::new(),
+                if let Some(comp) = local_comp {
+                    (
+                        comp.totals.clicks,
+                        comp.totals.scrolls.unwrap_or(0),
+                        comp.totals.distance_miles.unwrap_or(0.0),
+                    )
+                } else {
+                    // Fallback to user totals (Global)
+                    (
+                        user.totals.clicks.unwrap_or(0),
+                        user.totals.scrolls,
+                        user.totals.distance_miles.unwrap_or(0.0),
+                    )
+                }
+            } else {
+                (0, 0, 0.0)
             };
-        }
+
+        // Unpulsed Clicks
+        let total_clicks = self.mouse.stats.all_time.clicks;
+        let unpulsed_clicks = total_clicks.saturating_sub(pulsed_clicks);
+
+        // Unpulsed Scrolls
+        let total_scrolls = self.mouse.stats.all_time.scrolls;
+        let unpulsed_scrolls = total_scrolls.saturating_sub(pulsed_scrolls);
+
+        // Unpulsed Distance
+        let total_distance_meters = self.mouse.stats.all_time.distance_meters;
+        let pulsed_distance_meters = pulsed_distance_miles * 1609.34;
+        let unpulsed_distance_meters = (total_distance_meters - pulsed_distance_meters).max(0.0);
+
+        self.mouse.stats.unpulsed = MouseStats {
+            clicks: unpulsed_clicks,
+            scrolls: unpulsed_scrolls,
+            distance_meters: unpulsed_distance_meters,
+            clicks_by_button: HashMap::new(),
+        };
     }
 
     pub async fn update(&mut self, action: Action) -> bool {
@@ -463,22 +390,174 @@ impl App {
                     _ => None,
                 };
                 if let Some(k) = key_str {
-                    *self.session_heatmap.entry(k).or_insert(0) += 1;
+                    *self.keyboard.session_heatmap.entry(k).or_insert(0) += 1;
                 }
 
                 let pages = get_pages();
 
+                use std::collections::HashMap;
+                let categories = [
+                    "Overview", "Input", "Network", "Uptime", "Settings", "Account", "Toys",
+                ];
+                let mut category_map: HashMap<&str, Vec<usize>> = HashMap::new();
+                for (i, page) in pages.iter().enumerate() {
+                    category_map.entry(page.category).or_default().push(i);
+                }
+
+                // --- Navigation Logic ---
+                if self.nav.menu_open {
+                    // Identify current category
+                    let current_cat = pages[self.nav.current_tab].category;
+                    let indices = category_map.get(current_cat).unwrap();
+
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.nav.menu_open = false;
+                            return false;
+                        }
+                        KeyCode::Enter => {
+                            self.nav.menu_open = false;
+                            return false;
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            // Find current index in the sub-list
+                            if let Some(pos) =
+                                indices.iter().position(|&x| x == self.nav.current_tab)
+                            {
+                                let new_pos = if pos == 0 { indices.len() - 1 } else { pos - 1 };
+                                self.nav.current_tab = indices[new_pos];
+                            }
+                            return false;
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if let Some(pos) =
+                                indices.iter().position(|&x| x == self.nav.current_tab)
+                            {
+                                let new_pos = if pos == indices.len() - 1 { 0 } else { pos + 1 };
+                                self.nav.current_tab = indices[new_pos];
+                            }
+                            return false;
+                        }
+                        KeyCode::Left | KeyCode::Char('h') => {
+                            // Switch to prev category, first item
+                            if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
+                                let new_cat_idx = if pos == 0 {
+                                    categories.len() - 1
+                                } else {
+                                    pos - 1
+                                };
+                                let new_cat = categories[new_cat_idx];
+                                if let Some(new_indices) = category_map.get(new_cat) {
+                                    if let Some(&first) = new_indices.first() {
+                                        self.nav.current_tab = first;
+                                    }
+                                    // Auto-close menu if single item
+                                    if new_indices.len() <= 1 {
+                                        self.nav.menu_open = false;
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                        KeyCode::Right | KeyCode::Char('l') => {
+                            // Switch to next category, first item
+                            if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
+                                let new_cat_idx = if pos == categories.len() - 1 {
+                                    0
+                                } else {
+                                    pos + 1
+                                };
+                                let new_cat = categories[new_cat_idx];
+                                if let Some(new_indices) = category_map.get(new_cat) {
+                                    if let Some(&first) = new_indices.first() {
+                                        self.nav.current_tab = first;
+                                    }
+                                    // Auto-close menu if single item
+                                    if new_indices.len() <= 1 {
+                                        self.nav.menu_open = false;
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                        KeyCode::Char(c) => {
+                            // Generic shortcut: Check if 'c' matches first char of any page in current category
+                            if let Some(indices) = category_map.get(current_cat) {
+                                for &idx in indices {
+                                    if let Some(page) = pages.get(idx)
+                                        && page
+                                            .title
+                                            .to_lowercase()
+                                            .starts_with(&c.to_string().to_lowercase())
+                                    {
+                                        self.nav.current_tab = idx;
+                                        self.nav.menu_open = false;
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                // If menu is NOT open, check if we should open it or navigate categories
+                // But first allow specific page shortcuts if they don't conflict?
+                // Actually, standard TUI navigation (h/j/k/l) might conflict with inner page logic.
+                // We typically use 'Tab' to switch focus or 'Ctrl+...'
+                // Let's stick to:
+                // - Tab: Next Category
+                // - Shift+Tab: Prev Category
+                // - Enter/Space (while on tab bar? no concept of focus yet): Open Menu?
+                //
+                // The previous logic was: Tab/Right -> Next Page.
+                // New Logic:
+                // - Left/Right: Switch Category (first item)
+                // - Up/Down: Nothing? Or Open Menu?
+                //
+                // IMPORTANT: Many pages use h/j/k/l for THEIR own navigation (tables, etc).
+                // So we shouldn't steal those unless we are in a "Navigation Mode" (nav_menu_open).
+                //
+                // So, how to enter Navigation Mode?
+                // Maybe 'Tab' opens the menu for current category?
+                // Or 'Ctrl+N'?
+                // Let's try: 'Ctrl+N' (Navigate).
+                // Or, if the user hits 'Tab', we cycle categories.
+                // If the user hits 'Enter' on a category... we don't have focus on the tab bar.
+
+                // Let's define:
+                // Global Shortcuts:
+                // - Tab: Open Nav Menu (if closed) OR Next Category (if open?) -> Let's make Tab toggle Nav Menu?
+                // - Left/Right (Arrow): Switch Category (Immediate) - *Might conflict with page widgets?*
+                // - Most pages handle Left/Right? No, usually h/l for period, or j/k for table.
+                //
+                // Let's check existing code:
+                // "if !handled { ... KeyCode::Tab | KeyCode::Right => next tab ... }"
+                // So tab navigation only happened if the page didn't consume the key.
+
+                // Proposed:
+                // Keep the "if !handled" pattern.
+                // If page doesn't handle key, then checks for global nav.
+
                 // Let the current page handle the key first
                 let mut handled = false;
-                if let Some(page) = pages.get(self.current_tab) {
+                if !self.nav.menu_open
+                    && let Some(page) = pages.get(self.nav.current_tab)
+                {
                     handled = (page.handle_key)(self, key);
                 }
 
-                // Handle Scroll Tower Tab Shortcuts (Index 4)
-                if self.current_tab == 4 {
+                // Handle Scroll Tower Tab Shortcuts (Index 4) - Specific override
+                // This looks brittle index-based. Ideally Scroll Tower should handle this in its handle_key.
+                // But it modifies App state fields that are specific to it.
+                // We'll leave it for now but wrap in !nav_menu_open check implicitly by 'handled' or after.
+
+                if !self.nav.menu_open && self.nav.current_tab == 4 {
+                    // Scroll Tower
                     match key.code {
                         KeyCode::Char('p') => {
-                            self.profile_index = (self.profile_index + 1) % self.profiles.len();
+                            self.keyboard.profile_index =
+                                (self.keyboard.profile_index + 1) % self.keyboard.profiles.len();
                             handled = true;
                         }
                         KeyCode::Char('w') => {
@@ -486,22 +565,18 @@ impl App {
                             handled = true;
                         }
                         KeyCode::Char('m') => {
-                            // Toggle Mode
-                            self.scroll_mode = match self.scroll_mode {
+                            self.mouse.scroll_mode = match self.mouse.scroll_mode {
                                 ScrollMode::Lifetime => ScrollMode::Session,
                                 ScrollMode::Session => ScrollMode::Lifetime,
                             };
-
-                            // Immediately recalc meters for UI responsiveness
-                            // Need logic similar to RealtimeUpdate but utilizing current stored totals
-                            let total = self.current_total_scrolls;
-                            let display_scrolls = match self.scroll_mode {
+                            let total = self.mouse.current_total_scrolls;
+                            let display_scrolls = match self.mouse.scroll_mode {
                                 ScrollMode::Lifetime => total,
-                                ScrollMode::Session => total
-                                    .saturating_sub(self.session_start_scrolls.unwrap_or(total)),
+                                ScrollMode::Session => total.saturating_sub(
+                                    self.mouse.session_start_scrolls.unwrap_or(total),
+                                ),
                             };
-                            self.scroll_meters = display_scrolls as f64 * 0.016;
-
+                            self.mouse.scroll_meters = display_scrolls as f64 * 0.016;
                             handled = true;
                         }
                         _ => {}
@@ -510,20 +585,112 @@ impl App {
 
                 if !handled {
                     match key.code {
-                        KeyCode::Esc | KeyCode::Char('q') => return true,
+                        KeyCode::Esc | KeyCode::Char('q') => {
+                            if self.nav.menu_open {
+                                self.nav.menu_open = false;
+                            } else {
+                                self.nav.show_quit_confirm = !self.nav.show_quit_confirm;
+                            }
+                            return false;
+                        }
+                        KeyCode::Enter | KeyCode::Char('y') => {
+                            if self.nav.show_quit_confirm {
+                                return true; // Quit
+                            } else if key.code == KeyCode::Enter {
+                                // If not quitting, Enter might open the nav menu (if expandable)
+                                let current_cat = categories
+                                    .iter()
+                                    .find(|&&cat| {
+                                        if let Some(indices) = category_map.get(cat) {
+                                            indices.contains(&self.nav.current_tab)
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .copied()
+                                    .unwrap_or(categories[0]); // Fallback safe
+
+                                if let Some(indices) = category_map.get(current_cat)
+                                    && indices.len() > 1
+                                {
+                                    self.nav.menu_open = true;
+                                }
+                            }
+                        }
+                        KeyCode::Char('n') => {
+                            if self.nav.show_quit_confirm {
+                                self.nav.show_quit_confirm = false;
+                                return false;
+                            }
+                        }
                         KeyCode::Char('r') => {
                             self.user_loading = true;
                             self.pulses_loading = true;
                             spawn_fetch(self.client.clone(), self.tx.clone());
                         }
-                        KeyCode::Tab | KeyCode::Right => {
-                            self.current_tab = (self.current_tab + 1) % pages.len();
+                        KeyCode::Tab => {
+                            // Toggle Nav Menu
+                            self.nav.menu_open = !self.nav.menu_open;
+                        }
+                        // Allow Arrow Keys to switch categories if not handled by page
+                        KeyCode::Right => {
+                            // Logic to switch to next category's first item
+                            use std::collections::HashMap;
+                            let categories = [
+                                "Overview", "Input", "Network", "Uptime", "Settings", "Account",
+                                "Toys",
+                            ];
+                            let mut category_map: HashMap<&str, Vec<usize>> = HashMap::new();
+                            for (i, page) in pages.iter().enumerate() {
+                                category_map.entry(page.category).or_default().push(i);
+                            }
+                            let current_cat = pages[self.nav.current_tab].category;
+                            if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
+                                let new_cat_idx = if pos == categories.len() - 1 {
+                                    0
+                                } else {
+                                    pos + 1
+                                };
+                                let new_cat = categories[new_cat_idx];
+                                if let Some(new_indices) = category_map.get(new_cat)
+                                    && let Some(&first) = new_indices.first()
+                                {
+                                    self.nav.current_tab = first;
+                                }
+                            }
                         }
                         KeyCode::Left => {
-                            if self.current_tab == 0 {
-                                self.current_tab = pages.len() - 1;
-                            } else {
-                                self.current_tab -= 1;
+                            // Logic to switch to prev category's first item
+                            use std::collections::HashMap;
+                            let categories = [
+                                "Overview", "Input", "Network", "Uptime", "Settings", "Account",
+                                "Toys",
+                            ];
+                            let mut category_map: HashMap<&str, Vec<usize>> = HashMap::new();
+                            for (i, page) in pages.iter().enumerate() {
+                                category_map.entry(page.category).or_default().push(i);
+                            }
+                            let current_cat = pages[self.nav.current_tab].category;
+                            if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
+                                let new_cat_idx = if pos == 0 {
+                                    categories.len() - 1
+                                } else {
+                                    pos - 1
+                                };
+                                let new_cat = categories[new_cat_idx];
+                                if let Some(new_indices) = category_map.get(new_cat)
+                                    && let Some(&first) = new_indices.first()
+                                {
+                                    self.nav.current_tab = first;
+                                }
+                            }
+                        }
+                        KeyCode::Down => {
+                            // Open Nav Menu ONLY if category has > 1 item
+                            let current_cat = pages[self.nav.current_tab].category;
+                            let count = pages.iter().filter(|p| p.category == current_cat).count();
+                            if count > 1 {
+                                self.nav.menu_open = true;
                             }
                         }
                         _ => {}
@@ -532,7 +699,7 @@ impl App {
             }
             Action::Mouse(mouse) => {
                 let pages = get_pages();
-                if let Some(page) = pages.get(self.current_tab) {
+                if let Some(page) = pages.get(self.nav.current_tab) {
                     let _ = (page.handle_mouse)(self, mouse);
                 }
             }
@@ -577,31 +744,31 @@ impl App {
             }
             Action::KeyboardHeatmapLoaded(map, source) => {
                 info!("Heatmap loaded with {} keys from {}", map.len(), source);
-                self.heatmap_data = map;
+                self.keyboard.heatmap_data = map;
                 self.error = None;
-                self.heatmap_error = None;
+                self.keyboard.heatmap_error = None;
                 self.data_source = source;
             }
             Action::KeyboardHeatmapError(e) => {
                 self.error = Some(e.clone());
-                self.heatmap_error = Some(e);
+                self.keyboard.heatmap_error = Some(e);
                 self.data_source = "Error".to_string();
             }
             Action::MouseHeatmapLoaded(grid) => {
                 info!("Screen Heatmap loaded with {} rows", grid.len());
-                self.screen_heatmap_data = grid;
+                self.mouse.screen_heatmap = grid;
                 self.error = None;
             }
             Action::MouseHeatmapError(e) => {
                 self.error = Some(e);
             }
             Action::MouseStatsLoaded(stats) => {
-                self.mouse_stats = *stats;
+                self.mouse.stats = *stats;
                 self.recalculate_unpulsed();
             }
             Action::AppStatsLoaded(res) => match res {
                 Ok(stats) => {
-                    self.app_stats = stats;
+                    self.apps.stats = stats;
                 }
                 Err(e) => {
                     self.error = Some(format!("Failed to load app stats: {}", e));
@@ -609,7 +776,7 @@ impl App {
             },
             Action::NetworkStatsLoaded(res) => match res {
                 Ok(stats) => {
-                    self.network_stats = stats;
+                    self.network.stats = stats;
                 }
                 Err(e) => {
                     self.error = Some(format!("Failed to load network stats: {}", e));
@@ -620,12 +787,12 @@ impl App {
                 self.kinetic_stats.connection_error = error;
             }
             Action::RealtimeUpdate(data) => {
-                let profile = self.profiles[self.profile_index].clone();
+                let profile = self.keyboard.profiles[self.keyboard.profile_index].clone();
                 let _ = self.kinetic_stats.update(&data, &profile);
 
                 // Update Session Heatmap
                 if !data.heatmap.is_empty() {
-                    self.session_heatmap = data.heatmap.clone();
+                    self.keyboard.session_heatmap = data.heatmap.clone();
                 }
 
                 // Update Scroll Meters with absolute total (User Baseline + Unpulsed)
@@ -635,27 +802,27 @@ impl App {
                     let unpulsed = data.unpulsed_scrolls.max(0) as u64;
                     let total = baseline + unpulsed;
 
-                    self.current_total_scrolls = total;
+                    self.mouse.current_total_scrolls = total;
 
-                    if self.session_start_scrolls.is_none() {
-                        self.session_start_scrolls = Some(total);
+                    if self.mouse.session_start_scrolls.is_none() {
+                        self.mouse.session_start_scrolls = Some(total);
                     }
 
-                    let display_scrolls = match self.scroll_mode {
+                    let display_scrolls = match self.mouse.scroll_mode {
                         ScrollMode::Lifetime => total,
                         ScrollMode::Session => {
-                            total.saturating_sub(self.session_start_scrolls.unwrap_or(total))
+                            total.saturating_sub(self.mouse.session_start_scrolls.unwrap_or(total))
                         }
                     };
 
-                    self.scroll_meters = display_scrolls as f64 * 0.016;
+                    self.mouse.scroll_meters = display_scrolls as f64 * 0.016;
                 }
             }
             Action::DebugInfo(msg) => {
                 self.kinetic_stats.debug_info = Some(msg);
             }
             Action::PopupSelect => {
-                if let Some(selected_index) = self.layout_list_state.borrow().selected() {
+                if let Some(selected_index) = self.keyboard.layout_list_state.borrow().selected() {
                     let layouts = KeyboardLayout::all();
                     // Need to filter again to find the correct item if searching
                     let filtered: Vec<_> = layouts
@@ -663,44 +830,44 @@ impl App {
                         .filter(|l| {
                             l.to_string()
                                 .to_lowercase()
-                                .contains(&self.layout_search_query.to_lowercase())
+                                .contains(&self.keyboard.layout_search_query.to_lowercase())
                         })
                         .collect();
 
                     if let Some(layout) = filtered.get(selected_index) {
-                        self.keyboard_layout = *layout;
-                        self.show_layout_popup = false;
+                        self.keyboard.layout = *layout;
+                        self.keyboard.show_layout_popup = false;
                     }
                 }
             }
             Action::TogglePopup => {
-                self.show_layout_popup = !self.show_layout_popup;
+                self.keyboard.show_layout_popup = !self.keyboard.show_layout_popup;
                 // Reset search when opening
-                if self.show_layout_popup {
-                    self.layout_search_query.clear();
-                    self.layout_list_state.borrow_mut().select(Some(0));
+                if self.keyboard.show_layout_popup {
+                    self.keyboard.layout_search_query.clear();
+                    self.keyboard.layout_list_state.borrow_mut().select(Some(0));
                 }
             }
             Action::SelectLayout => {
                 // Already handled in PopupSelect, but kept for compatibility if needed
             }
             Action::NextLayoutItem => {
-                let mut state = self.layout_list_state.borrow_mut();
+                let mut state = self.keyboard.layout_list_state.borrow_mut();
                 let selected = state.selected().unwrap_or(0);
                 // We don't know the filtered count here easily without recalculating
                 // For simplicity, just increment (the UI rendering handles bounds usually, but logic is better)
                 state.select(Some(selected + 1));
             }
             Action::PrevLayoutItem => {
-                let mut state = self.layout_list_state.borrow_mut();
+                let mut state = self.keyboard.layout_list_state.borrow_mut();
                 let selected = state.selected().unwrap_or(0);
                 if selected > 0 {
                     state.select(Some(selected - 1));
                 }
             }
             Action::PopupSearch(c) => {
-                self.layout_search_query.push_str(&c);
-                self.layout_list_state.borrow_mut().select(Some(0));
+                self.keyboard.layout_search_query.push_str(&c);
+                self.keyboard.layout_list_state.borrow_mut().select(Some(0));
             }
         }
         false
@@ -713,10 +880,10 @@ impl App {
     }
 
     pub fn sort_app_stats(&mut self) {
-        let mode = self.app_sort_mode;
-        let order = self.app_sort_order;
+        let mode = self.apps.sort_mode;
+        let order = self.apps.sort_order;
 
-        self.app_stats.sort_by(|a, b| {
+        self.apps.stats.sort_by(|a, b| {
             let cmp = match mode {
                 AppSortMode::Keys => a.keys.cmp(&b.keys),
                 AppSortMode::Clicks => a.clicks.cmp(&b.clicks),
@@ -740,10 +907,10 @@ impl App {
     }
 
     pub fn sort_network_stats(&mut self) {
-        let mode = self.network_sort_mode;
-        let order = self.network_sort_order;
+        let mode = self.network.sort_mode;
+        let order = self.network.sort_order;
 
-        self.network_stats.sort_by(|a, b| {
+        self.network.stats.sort_by(|a, b| {
             let cmp = match mode {
                 NetworkSortMode::Download => a
                     .download_mb
@@ -791,39 +958,9 @@ pub fn spawn_fetch(client: WhatpulseClient, tx: mpsc::Sender<Action>) {
         let _ = tx_computers.send(Action::ComputersLoaded(res)).await;
     });
 
-    // Initial Heatmap Fetch (All time)
-    let tx_heatmap = tx.clone();
-    let client_heatmap = client.clone();
-    tokio::spawn(async move {
-        match client_heatmap.get_heatmap("all").await {
-            Ok((map, source)) => {
-                let _ = tx_heatmap
-                    .send(Action::KeyboardHeatmapLoaded(map, source))
-                    .await;
-            }
-            Err(e) => {
-                let _ = tx_heatmap
-                    .send(Action::KeyboardHeatmapError(e.to_string()))
-                    .await;
-            }
-        }
-    });
-
-    // Initial Screen Heatmap Fetch (Today)
-    let tx_screen = tx.clone();
-    let client_screen = client.clone();
-    tokio::spawn(async move {
-        match client_screen.get_screen_heatmap("today").await {
-            Ok(grid) => {
-                let _ = tx_screen.send(Action::MouseHeatmapLoaded(grid)).await;
-            }
-            Err(e) => {
-                let _ = tx_screen
-                    .send(Action::MouseHeatmapError(e.to_string()))
-                    .await;
-            }
-        }
-    });
+    // Initial Heatmap Fetch
+    spawn_fetch_keyboard_heatmap(client.clone(), tx.clone(), "all");
+    spawn_fetch_mouse_heatmap(client.clone(), tx.clone(), "today");
 
     spawn_fetch_mouse_stats(tx.clone());
     spawn_fetch_app_stats(tx.clone(), "all");
@@ -905,12 +1042,26 @@ pub fn spawn_fetch_network_stats(tx: mpsc::Sender<Action>, period: &str) {
     });
 }
 
-pub fn spawn_fetch_mouse_heatmap(client: WhatpulseClient, tx: mpsc::Sender<Action>, period: &str) {
+pub fn spawn_fetch_mouse_heatmap(_client: WhatpulseClient, tx: mpsc::Sender<Action>, period: &str) {
     let period = period.to_string();
     tokio::spawn(async move {
-        match client.get_screen_heatmap(&period).await {
-            Ok(grid) => {
+        // Use standard dimensions (320x200) or config if available?
+        // For TUI, 320x200 is high res enough for scaling down to terminal cells.
+        let grid_w = 320;
+        let grid_h = 200;
+
+        let res = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<u64>>> {
+            let db = crate::db::Database::new()?;
+            db.get_mouse_heatmap_grid(&period, grid_w, grid_h)
+        })
+        .await;
+
+        match res {
+            Ok(Ok(grid)) => {
                 let _ = tx.send(Action::MouseHeatmapLoaded(grid)).await;
+            }
+            Ok(Err(e)) => {
+                let _ = tx.send(Action::MouseHeatmapError(e.to_string())).await;
             }
             Err(e) => {
                 let _ = tx.send(Action::MouseHeatmapError(e.to_string())).await;
@@ -920,15 +1071,26 @@ pub fn spawn_fetch_mouse_heatmap(client: WhatpulseClient, tx: mpsc::Sender<Actio
 }
 
 pub fn spawn_fetch_keyboard_heatmap(
-    client: WhatpulseClient,
+    _client: WhatpulseClient,
     tx: mpsc::Sender<Action>,
     period: &str,
 ) {
     let period = period.to_string();
     tokio::spawn(async move {
-        match client.get_heatmap(&period).await {
-            Ok((map, source)) => {
-                let _ = tx.send(Action::KeyboardHeatmapLoaded(map, source)).await;
+        let map = tokio::task::spawn_blocking(move || -> Result<HashMap<String, u64>> {
+            let db = crate::db::Database::new()?;
+            db.get_heatmap_stats(&period)
+        })
+        .await;
+
+        match map {
+            Ok(Ok(map)) => {
+                let _ = tx
+                    .send(Action::KeyboardHeatmapLoaded(map, "Local DB".to_string()))
+                    .await;
+            }
+            Ok(Err(e)) => {
+                let _ = tx.send(Action::KeyboardHeatmapError(e.to_string())).await;
             }
             Err(e) => {
                 let _ = tx.send(Action::KeyboardHeatmapError(e.to_string())).await;
@@ -989,13 +1151,9 @@ mod tests {
             crate::client::WhatpulseClient::new_local().unwrap(),
             tokio::sync::mpsc::channel(1).0,
         );
-
-        // Mock Mouse Stats (All Time)
-        app.mouse_stats.all_time.clicks = 1000;
-        app.mouse_stats.all_time.scrolls = 500;
-        app.mouse_stats.all_time.distance_meters = 100.0;
-
-        // Mock User Stats (Pulsed)
+        app.mouse.stats.all_time.clicks = 1000;
+        app.mouse.stats.all_time.scrolls = 500;
+        app.mouse.stats.all_time.distance_meters = 100.0;
         let user = crate::client::UserResponse {
             id: 1,
             username: "test".to_string(),
@@ -1017,7 +1175,7 @@ mod tests {
                 upload_mb: None,
                 uptime_seconds: None,
                 scrolls: 400,
-                distance_miles: Some(0.05), // 0.05 miles * 1609.34 = 80.467 meters
+                distance_miles: Some(0.05),
             },
             ranks: None,
             include_in_rankings: false,
@@ -1027,16 +1185,9 @@ mod tests {
         app.user_stats = Some(user);
 
         app.recalculate_unpulsed();
-
-        // Check Unpulsed
-        // Clicks: 1000 - 800 = 200
-        assert_eq!(app.mouse_stats.unpulsed.clicks, 200);
-
-        // Scrolls: 500 - 400 = 100
-        assert_eq!(app.mouse_stats.unpulsed.scrolls, 100);
-
-        // Distance: 100.0 - 80.467 = 19.533
+        assert_eq!(app.mouse.stats.unpulsed.clicks, 200);
+        assert_eq!(app.mouse.stats.unpulsed.scrolls, 100);
         let expected_dist = 100.0 - (0.05 * 1609.34);
-        assert!((app.mouse_stats.unpulsed.distance_meters - expected_dist).abs() < 1e-3);
+        assert!((app.mouse.stats.unpulsed.distance_meters - expected_dist).abs() < 1e-3);
     }
 }

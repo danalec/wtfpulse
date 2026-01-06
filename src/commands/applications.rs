@@ -13,6 +13,7 @@ use ratatui::{
 inventory::submit! {
     TuiPage {
         title: "Applications",
+        category: "Input",
         render: render_apps,
         handle_key: handle_apps_key,
         handle_mouse,
@@ -32,37 +33,51 @@ fn render_apps(f: &mut Frame, app: &App, area: Rect) {
     let row_highlight_style = Style::default().add_modifier(Modifier::REVERSED);
 
     let rows: Vec<Row> = app
-        .app_stats
+        .apps
+        .stats
         .iter()
         .map(|stat| {
+            // Calculate Distance (Assuming 1.6cm per scroll?)
+            // Monitor uses 0.016 m / scroll
+            let dist_m = stat.scrolls as f64 * 0.016;
+            let m = dist_m.floor() as u64;
+            let cm = ((dist_m - (m as f64)) * 100.0).round() as u64;
+            let distance_str = format!("{}m,{}cm", m, cm);
+
+            let total_mb = stat.download_mb + stat.upload_mb;
+
             Row::new(vec![
                 stat.name.clone(),
                 stat.keys.to_string(),
                 stat.clicks.to_string(),
                 stat.scrolls.to_string(),
-                format!("{:.2} MB", stat.download_mb),
-                format!("{:.2} MB", stat.upload_mb),
+                distance_str,
+                format!("{:.2}MB", stat.download_mb),
+                format!("{:.2}MB", stat.upload_mb),
+                format!("{:.2}MB", total_mb),
             ])
         })
         .collect();
 
     let widths = [
-        Constraint::Percentage(30),
-        Constraint::Percentage(10),
-        Constraint::Percentage(10),
-        Constraint::Percentage(10),
-        Constraint::Percentage(20),
-        Constraint::Percentage(20),
+        Constraint::Percentage(20), // Name
+        Constraint::Percentage(8),  // Keys
+        Constraint::Percentage(8),  // Clicks
+        Constraint::Percentage(8),  // Scrolls
+        Constraint::Percentage(14), // Distance
+        Constraint::Percentage(14), // Download
+        Constraint::Percentage(14), // Upload
+        Constraint::Percentage(14), // Total
     ];
 
-    let period_str = get_display_period(app.app_stats_period);
+    let period_str = get_display_period(app.apps.period);
 
     // Sort Indicator
-    let sort_indicator = match app.app_sort_order {
+    let sort_indicator = match app.apps.sort_order {
         SortOrder::Ascending => "▲",
         SortOrder::Descending => "▼",
     };
-    let sort_col = match app.app_sort_mode {
+    let sort_col = match app.apps.sort_mode {
         AppSortMode::Keys => "Keys",
         AppSortMode::Clicks => "Clicks",
         AppSortMode::Scrolls => "Scrolls",
@@ -82,18 +97,21 @@ fn render_apps(f: &mut Frame, app: &App, area: Rect) {
         "Keys",
         "Clicks",
         "Scrolls",
+        "Distance",
         "Download",
         "Upload",
+        "Total",
     ];
     let header_cells = headers.iter().map(|h| {
         let mut content = h.to_string();
-        let is_sorted = match (app.app_sort_mode, h) {
+        let is_sorted = match (app.apps.sort_mode, h) {
             (AppSortMode::Name, &"Application") => true,
             (AppSortMode::Keys, &"Keys") => true,
             (AppSortMode::Clicks, &"Clicks") => true,
             (AppSortMode::Scrolls, &"Scrolls") => true,
             (AppSortMode::Download, &"Download") => true,
             (AppSortMode::Upload, &"Upload") => true,
+            // Total not sortable yet in AppSortMode
             _ => false,
         };
         if is_sorted {
@@ -108,14 +126,14 @@ fn render_apps(f: &mut Frame, app: &App, area: Rect) {
         .row_highlight_style(row_highlight_style)
         .highlight_symbol(">> ");
 
-    f.render_stateful_widget(table, chunks[0], &mut app.apps_table_state.borrow_mut());
+    f.render_stateful_widget(table, chunks[0], &mut app.apps.table_state.borrow_mut());
 
     render_scrollbar(
         f,
         app,
         chunks[0],
-        app.app_stats.len(),
-        &mut app.apps_table_state.borrow_mut(),
+        app.apps.stats.len(),
+        &mut app.apps.table_state.borrow_mut(),
     );
 
     if app.date_picker.open {
@@ -133,13 +151,13 @@ fn handle_apps_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('s') => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
                 // Shift+s: Toggle Order
-                app.app_sort_order = match app.app_sort_order {
+                app.apps.sort_order = match app.apps.sort_order {
                     SortOrder::Ascending => SortOrder::Descending,
                     SortOrder::Descending => SortOrder::Ascending,
                 };
             } else {
                 // s: Cycle Mode
-                app.app_sort_mode = match app.app_sort_mode {
+                app.apps.sort_mode = match app.apps.sort_mode {
                     AppSortMode::Keys => AppSortMode::Clicks,
                     AppSortMode::Clicks => AppSortMode::Scrolls,
                     AppSortMode::Scrolls => AppSortMode::Download,
@@ -147,17 +165,17 @@ fn handle_apps_key(app: &mut App, key: KeyEvent) -> bool {
                     AppSortMode::Upload => AppSortMode::Name,
                     AppSortMode::Name => AppSortMode::Keys,
                 };
-                if app.app_sort_mode == AppSortMode::Name {
-                    app.app_sort_order = SortOrder::Ascending;
+                if app.apps.sort_mode == AppSortMode::Name {
+                    app.apps.sort_order = SortOrder::Ascending;
                 } else {
-                    app.app_sort_order = SortOrder::Descending;
+                    app.apps.sort_order = SortOrder::Descending;
                 }
             }
             app.sort_app_stats();
             true
         }
         KeyCode::Char('o') => {
-            app.app_sort_order = match app.app_sort_order {
+            app.apps.sort_order = match app.apps.sort_order {
                 SortOrder::Ascending => SortOrder::Descending,
                 SortOrder::Descending => SortOrder::Ascending,
             };
@@ -165,25 +183,25 @@ fn handle_apps_key(app: &mut App, key: KeyEvent) -> bool {
             true
         }
         _ => {
-            let len = app.app_stats.len();
-            handle_table_nav(&mut app.apps_table_state.borrow_mut(), key.code, len)
+            let len = app.apps.stats.len();
+            handle_table_nav(&mut app.apps.table_state.borrow_mut(), key.code, len)
         }
     }
 }
 
 fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) -> bool {
     use crossterm::event::MouseEventKind;
-    let len = app.app_stats.len();
+    let len = app.apps.stats.len();
     if len == 0 {
         return false;
     }
 
     match event.kind {
         MouseEventKind::ScrollDown => {
-            handle_table_nav(&mut app.apps_table_state.borrow_mut(), KeyCode::Down, len)
+            handle_table_nav(&mut app.apps.table_state.borrow_mut(), KeyCode::Down, len)
         }
         MouseEventKind::ScrollUp => {
-            handle_table_nav(&mut app.apps_table_state.borrow_mut(), KeyCode::Up, len)
+            handle_table_nav(&mut app.apps.table_state.borrow_mut(), KeyCode::Up, len)
         }
         _ => false,
     }

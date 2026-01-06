@@ -18,10 +18,12 @@ pub mod raw;
 pub mod scroll_tower;
 pub mod settings;
 pub mod tui;
+pub mod uptime;
 pub mod user;
 
 pub struct TuiPage {
     pub title: &'static str,
+    pub category: &'static str,
     pub render: fn(&mut Frame, &App, Rect),
     pub handle_key: fn(&mut App, KeyEvent) -> bool,
     pub handle_mouse: fn(&mut App, crossterm::event::MouseEvent) -> bool,

@@ -13,6 +13,7 @@ use ratatui::{
 inventory::submit! {
     TuiPage {
         title: "Network",
+        category: "Network",
         render: render_network,
         handle_key: handle_network_key,
         handle_mouse,
@@ -32,14 +33,15 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
     let row_highlight_style = Style::default().add_modifier(Modifier::REVERSED);
 
     let rows: Vec<Row> = app
-        .network_stats
+        .network
+        .stats
         .iter()
         .map(|stat| {
             Row::new(vec![
                 stat.interface.clone(),
-                format!("{:.2} MB", stat.download_mb),
-                format!("{:.2} MB", stat.upload_mb),
-                format!("{:.2} MB", stat.download_mb + stat.upload_mb),
+                format!("{:.2}MB", stat.download_mb),
+                format!("{:.2}MB", stat.upload_mb),
+                format!("{:.2}MB", stat.download_mb + stat.upload_mb),
             ])
         })
         .collect();
@@ -51,14 +53,14 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Percentage(20),
     ];
 
-    let period_str = get_display_period(app.network_stats_period);
+    let period_str = get_display_period(app.network.period);
 
     // Sort Indicator
-    let sort_indicator = match app.network_sort_order {
+    let sort_indicator = match app.network.sort_order {
         SortOrder::Ascending => "▲",
         SortOrder::Descending => "▼",
     };
-    let sort_col = match app.network_sort_mode {
+    let sort_col = match app.network.sort_mode {
         NetworkSortMode::Download => "Download",
         NetworkSortMode::Upload => "Upload",
         NetworkSortMode::Total => "Total",
@@ -74,13 +76,13 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
     let headers = ["Interface", "Download", "Upload", "Total"];
     let header_cells = headers.iter().map(|h| {
         let mut content = h.to_string();
-        let is_sorted = match (app.network_sort_mode, h) {
-            (NetworkSortMode::Interface, &"Interface") => true,
-            (NetworkSortMode::Download, &"Download") => true,
-            (NetworkSortMode::Upload, &"Upload") => true,
-            (NetworkSortMode::Total, &"Total") => true,
-            _ => false,
-        };
+        let is_sorted = matches!(
+            (app.network.sort_mode, h),
+            (NetworkSortMode::Interface, &"Interface")
+                | (NetworkSortMode::Download, &"Download")
+                | (NetworkSortMode::Upload, &"Upload")
+                | (NetworkSortMode::Total, &"Total")
+        );
         if is_sorted {
             content = format!("{} {}", h, sort_indicator);
         }
@@ -93,14 +95,14 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
         .row_highlight_style(row_highlight_style)
         .highlight_symbol(">> ");
 
-    f.render_stateful_widget(table, chunks[0], &mut app.network_table_state.borrow_mut());
+    f.render_stateful_widget(table, chunks[0], &mut app.network.table_state.borrow_mut());
 
     render_scrollbar(
         f,
         app,
         chunks[0],
-        app.network_stats.len(),
-        &mut app.network_table_state.borrow_mut(),
+        app.network.stats.len(),
+        &mut app.network.table_state.borrow_mut(),
     );
 
     if app.date_picker.open {
@@ -118,29 +120,29 @@ fn handle_network_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('s') => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
                 // Shift+s: Toggle Order
-                app.network_sort_order = match app.network_sort_order {
+                app.network.sort_order = match app.network.sort_order {
                     SortOrder::Ascending => SortOrder::Descending,
                     SortOrder::Descending => SortOrder::Ascending,
                 };
             } else {
                 // s: Cycle Mode
-                app.network_sort_mode = match app.network_sort_mode {
+                app.network.sort_mode = match app.network.sort_mode {
                     NetworkSortMode::Download => NetworkSortMode::Upload,
                     NetworkSortMode::Upload => NetworkSortMode::Total,
                     NetworkSortMode::Total => NetworkSortMode::Interface,
                     NetworkSortMode::Interface => NetworkSortMode::Download,
                 };
-                if app.network_sort_mode == NetworkSortMode::Interface {
-                    app.network_sort_order = SortOrder::Ascending;
+                if app.network.sort_mode == NetworkSortMode::Interface {
+                    app.network.sort_order = SortOrder::Ascending;
                 } else {
-                    app.network_sort_order = SortOrder::Descending;
+                    app.network.sort_order = SortOrder::Descending;
                 }
             }
             app.sort_network_stats();
             true
         }
         KeyCode::Char('o') => {
-            app.network_sort_order = match app.network_sort_order {
+            app.network.sort_order = match app.network.sort_order {
                 SortOrder::Ascending => SortOrder::Descending,
                 SortOrder::Descending => SortOrder::Ascending,
             };
@@ -148,27 +150,27 @@ fn handle_network_key(app: &mut App, key: KeyEvent) -> bool {
             true
         }
         _ => {
-            let len = app.network_stats.len();
-            handle_table_nav(&mut app.network_table_state.borrow_mut(), key.code, len)
+            let len = app.network.stats.len();
+            handle_table_nav(&mut app.network.table_state.borrow_mut(), key.code, len)
         }
     }
 }
 
 fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) -> bool {
     use crossterm::event::MouseEventKind;
-    let len = app.network_stats.len();
+    let len = app.network.stats.len();
     if len == 0 {
         return false;
     }
 
     match event.kind {
         MouseEventKind::ScrollDown => handle_table_nav(
-            &mut app.network_table_state.borrow_mut(),
+            &mut app.network.table_state.borrow_mut(),
             KeyCode::Down,
             len,
         ),
         MouseEventKind::ScrollUp => {
-            handle_table_nav(&mut app.network_table_state.borrow_mut(), KeyCode::Up, len)
+            handle_table_nav(&mut app.network.table_state.borrow_mut(), KeyCode::Up, len)
         }
         _ => false,
     }
