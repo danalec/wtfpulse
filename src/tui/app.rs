@@ -216,6 +216,8 @@ pub struct App {
     pub api_key_input: String,
     pub notification: Option<(String, std::time::Instant)>,
     pub uptime_period: TimePeriod,
+    pub start_time: std::time::Instant,
+    pub show_help: bool,
 }
 
 impl App {
@@ -261,6 +263,8 @@ impl App {
             api_key_input: String::new(),
             notification: None,
             uptime_period: TimePeriod::All,
+            start_time: std::time::Instant::now(),
+            show_help: false,
         }
     }
 
@@ -874,9 +878,16 @@ impl App {
     }
 
     pub fn get_uptime(&self) -> String {
-        let _uptime_seconds = self.kinetic_stats.unpulsed_keys; // Placeholder
-        // Real implementation would track start time
-        "N/A".to_string()
+        let elapsed = self.start_time.elapsed();
+        let days = elapsed.as_secs() / 86400;
+        let hours = (elapsed.as_secs() % 86400) / 3600;
+        let minutes = (elapsed.as_secs() % 3600) / 60;
+        let seconds = elapsed.as_secs() % 60;
+        if days > 0 {
+            format!("{}d {:02}h {:02}m", days, hours, minutes)
+        } else {
+            format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        }
     }
 
     pub fn sort_app_stats(&mut self) {
