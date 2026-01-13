@@ -353,9 +353,7 @@ impl App {
 
     pub async fn update(&mut self, action: Action) -> bool {
         match action {
-            Action::Quit => {
-                return true;
-            }
+            Action::Quit => return true,
             Action::Tick => {
                 if self.last_refresh.elapsed() >= self.refresh_rate {
                     self.last_refresh = std::time::Instant::now();
@@ -367,346 +365,8 @@ impl App {
                 self.pulses_loading = true;
                 spawn_fetch(self.client.clone(), self.tx.clone());
             }
-            Action::Key(key) => {
-                // If there is an error popup, any key dismisses it
-                if self.error.is_some() {
-                    self.error = None;
-                    return false;
-                }
-
-                // Update Session Heatmap from TUI inputs
-                let key_str = match key.code {
-                    KeyCode::Char(c) => Some(get_api_key_from_char(c)),
-                    KeyCode::Enter => Some("RETURN".to_string()),
-                    KeyCode::Backspace => Some("BACKSPACE".to_string()),
-                    KeyCode::Tab => Some("TAB".to_string()),
-                    KeyCode::Esc => Some("ESCAPE".to_string()),
-                    KeyCode::Delete => Some("DELETE".to_string()),
-                    KeyCode::Insert => Some("INSERT".to_string()),
-                    KeyCode::Home => Some("HOME".to_string()),
-                    KeyCode::End => Some("END".to_string()),
-                    KeyCode::PageUp => Some("PAGEUP".to_string()),
-                    KeyCode::PageDown => Some("PAGEDOWN".to_string()),
-                    KeyCode::Left => Some("LEFT".to_string()),
-                    KeyCode::Right => Some("RIGHT".to_string()),
-                    KeyCode::Up => Some("UP".to_string()),
-                    KeyCode::Down => Some("DOWN".to_string()),
-                    _ => None,
-                };
-                if let Some(k) = key_str {
-                    *self.keyboard.session_heatmap.entry(k).or_insert(0) += 1;
-                }
-
-                let pages = get_pages();
-
-                use std::collections::HashMap;
-                let categories = [
-                    "Overview", "Input", "Network", "Uptime", "Settings", "Account", "Toys",
-                ];
-                let mut category_map: HashMap<&str, Vec<usize>> = HashMap::new();
-                for (i, page) in pages.iter().enumerate() {
-                    category_map.entry(page.category).or_default().push(i);
-                }
-
-                // --- Navigation Logic ---
-                if self.nav.menu_open {
-                    // Identify current category
-                    let current_cat = pages[self.nav.current_tab].category;
-                    let indices = category_map.get(current_cat).unwrap();
-
-                    match key.code {
-                        KeyCode::Esc => {
-                            self.nav.menu_open = false;
-                            return false;
-                        }
-                        KeyCode::Enter => {
-                            self.nav.menu_open = false;
-                            return false;
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            // Find current index in the sub-list
-                            if let Some(pos) =
-                                indices.iter().position(|&x| x == self.nav.current_tab)
-                            {
-                                let new_pos = if pos == 0 { indices.len() - 1 } else { pos - 1 };
-                                self.nav.current_tab = indices[new_pos];
-                            }
-                            return false;
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if let Some(pos) =
-                                indices.iter().position(|&x| x == self.nav.current_tab)
-                            {
-                                let new_pos = if pos == indices.len() - 1 { 0 } else { pos + 1 };
-                                self.nav.current_tab = indices[new_pos];
-                            }
-                            return false;
-                        }
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            // Switch to prev category, first item
-                            if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
-                                let new_cat_idx = if pos == 0 {
-                                    categories.len() - 1
-                                } else {
-                                    pos - 1
-                                };
-                                let new_cat = categories[new_cat_idx];
-                                if let Some(new_indices) = category_map.get(new_cat) {
-                                    if let Some(&first) = new_indices.first() {
-                                        self.nav.current_tab = first;
-                                    }
-                                    // Auto-close menu if single item
-                                    if new_indices.len() <= 1 {
-                                        self.nav.menu_open = false;
-                                    }
-                                }
-                            }
-                            return false;
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            // Switch to next category, first item
-                            if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
-                                let new_cat_idx = if pos == categories.len() - 1 {
-                                    0
-                                } else {
-                                    pos + 1
-                                };
-                                let new_cat = categories[new_cat_idx];
-                                if let Some(new_indices) = category_map.get(new_cat) {
-                                    if let Some(&first) = new_indices.first() {
-                                        self.nav.current_tab = first;
-                                    }
-                                    // Auto-close menu if single item
-                                    if new_indices.len() <= 1 {
-                                        self.nav.menu_open = false;
-                                    }
-                                }
-                            }
-                            return false;
-                        }
-                        KeyCode::Char(c) => {
-                            // Generic shortcut: Check if 'c' matches first char of any page in current category
-                            if let Some(indices) = category_map.get(current_cat) {
-                                for &idx in indices {
-                                    if let Some(page) = pages.get(idx)
-                                        && page
-                                            .title
-                                            .to_lowercase()
-                                            .starts_with(&c.to_string().to_lowercase())
-                                    {
-                                        self.nav.current_tab = idx;
-                                        self.nav.menu_open = false;
-                                        return false;
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-
-                // If menu is NOT open, check if we should open it or navigate categories
-                // But first allow specific page shortcuts if they don't conflict?
-                // Actually, standard TUI navigation (h/j/k/l) might conflict with inner page logic.
-                // We typically use 'Tab' to switch focus or 'Ctrl+...'
-                // Let's stick to:
-                // - Tab: Next Category
-                // - Shift+Tab: Prev Category
-                // - Enter/Space (while on tab bar? no concept of focus yet): Open Menu?
-                //
-                // The previous logic was: Tab/Right -> Next Page.
-                // New Logic:
-                // - Left/Right: Switch Category (first item)
-                // - Up/Down: Nothing? Or Open Menu?
-                //
-                // IMPORTANT: Many pages use h/j/k/l for THEIR own navigation (tables, etc).
-                // So we shouldn't steal those unless we are in a "Navigation Mode" (nav_menu_open).
-                //
-                // So, how to enter Navigation Mode?
-                // Maybe 'Tab' opens the menu for current category?
-                // Or 'Ctrl+N'?
-                // Let's try: 'Ctrl+N' (Navigate).
-                // Or, if the user hits 'Tab', we cycle categories.
-                // If the user hits 'Enter' on a category... we don't have focus on the tab bar.
-
-                // Let's define:
-                // Global Shortcuts:
-                // - Tab: Open Nav Menu (if closed) OR Next Category (if open?) -> Let's make Tab toggle Nav Menu?
-                // - Left/Right (Arrow): Switch Category (Immediate) - *Might conflict with page widgets?*
-                // - Most pages handle Left/Right? No, usually h/l for period, or j/k for table.
-                //
-                // Let's check existing code:
-                // "if !handled { ... KeyCode::Tab | KeyCode::Right => next tab ... }"
-                // So tab navigation only happened if the page didn't consume the key.
-
-                // Proposed:
-                // Keep the "if !handled" pattern.
-                // If page doesn't handle key, then checks for global nav.
-
-                // Let the current page handle the key first
-                let mut handled = false;
-                if !self.nav.menu_open
-                    && let Some(page) = pages.get(self.nav.current_tab)
-                {
-                    handled = (page.handle_key)(self, key);
-                }
-
-                // Handle Scroll Tower Tab Shortcuts (Index 4) - Specific override
-                // This looks brittle index-based. Ideally Scroll Tower should handle this in its handle_key.
-                // But it modifies App state fields that are specific to it.
-                // We'll leave it for now but wrap in !nav_menu_open check implicitly by 'handled' or after.
-
-                if !self.nav.menu_open && self.nav.current_tab == 4 {
-                    // Scroll Tower
-                    match key.code {
-                        KeyCode::Char('p') => {
-                            self.keyboard.profile_index =
-                                (self.keyboard.profile_index + 1) % self.keyboard.profiles.len();
-                            handled = true;
-                        }
-                        KeyCode::Char('w') => {
-                            self.trigger_open_window().await;
-                            handled = true;
-                        }
-                        KeyCode::Char('m') => {
-                            self.mouse.scroll_mode = match self.mouse.scroll_mode {
-                                ScrollMode::Lifetime => ScrollMode::Session,
-                                ScrollMode::Session => ScrollMode::Lifetime,
-                            };
-                            let total = self.mouse.current_total_scrolls;
-                            let display_scrolls = match self.mouse.scroll_mode {
-                                ScrollMode::Lifetime => total,
-                                ScrollMode::Session => total.saturating_sub(
-                                    self.mouse.session_start_scrolls.unwrap_or(total),
-                                ),
-                            };
-                            self.mouse.scroll_meters = display_scrolls as f64 * 0.016;
-                            handled = true;
-                        }
-                        _ => {}
-                    }
-                }
-
-                if !handled {
-                    match key.code {
-                        KeyCode::Esc | KeyCode::Char('q') => {
-                            if self.nav.menu_open {
-                                self.nav.menu_open = false;
-                            } else {
-                                self.nav.show_quit_confirm = !self.nav.show_quit_confirm;
-                            }
-                            return false;
-                        }
-                        KeyCode::Enter | KeyCode::Char('y') => {
-                            if self.nav.show_quit_confirm {
-                                return true; // Quit
-                            } else if key.code == KeyCode::Enter {
-                                // If not quitting, Enter might open the nav menu (if expandable)
-                                let current_cat = categories
-                                    .iter()
-                                    .find(|&&cat| {
-                                        if let Some(indices) = category_map.get(cat) {
-                                            indices.contains(&self.nav.current_tab)
-                                        } else {
-                                            false
-                                        }
-                                    })
-                                    .copied()
-                                    .unwrap_or(categories[0]); // Fallback safe
-
-                                if let Some(indices) = category_map.get(current_cat)
-                                    && indices.len() > 1
-                                {
-                                    self.nav.menu_open = true;
-                                }
-                            }
-                        }
-                        KeyCode::Char('n') => {
-                            if self.nav.show_quit_confirm {
-                                self.nav.show_quit_confirm = false;
-                                return false;
-                            }
-                        }
-                        KeyCode::Char('r') => {
-                            self.user_loading = true;
-                            self.pulses_loading = true;
-                            spawn_fetch(self.client.clone(), self.tx.clone());
-                        }
-                        KeyCode::Tab => {
-                            // Toggle Nav Menu
-                            self.nav.menu_open = !self.nav.menu_open;
-                        }
-                        // Allow Arrow Keys to switch categories if not handled by page
-                        KeyCode::Right => {
-                            // Logic to switch to next category's first item
-                            use std::collections::HashMap;
-                            let categories = [
-                                "Overview", "Input", "Network", "Uptime", "Settings", "Account",
-                                "Toys",
-                            ];
-                            let mut category_map: HashMap<&str, Vec<usize>> = HashMap::new();
-                            for (i, page) in pages.iter().enumerate() {
-                                category_map.entry(page.category).or_default().push(i);
-                            }
-                            let current_cat = pages[self.nav.current_tab].category;
-                            if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
-                                let new_cat_idx = if pos == categories.len() - 1 {
-                                    0
-                                } else {
-                                    pos + 1
-                                };
-                                let new_cat = categories[new_cat_idx];
-                                if let Some(new_indices) = category_map.get(new_cat)
-                                    && let Some(&first) = new_indices.first()
-                                {
-                                    self.nav.current_tab = first;
-                                }
-                            }
-                        }
-                        KeyCode::Left => {
-                            // Logic to switch to prev category's first item
-                            use std::collections::HashMap;
-                            let categories = [
-                                "Overview", "Input", "Network", "Uptime", "Settings", "Account",
-                                "Toys",
-                            ];
-                            let mut category_map: HashMap<&str, Vec<usize>> = HashMap::new();
-                            for (i, page) in pages.iter().enumerate() {
-                                category_map.entry(page.category).or_default().push(i);
-                            }
-                            let current_cat = pages[self.nav.current_tab].category;
-                            if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
-                                let new_cat_idx = if pos == 0 {
-                                    categories.len() - 1
-                                } else {
-                                    pos - 1
-                                };
-                                let new_cat = categories[new_cat_idx];
-                                if let Some(new_indices) = category_map.get(new_cat)
-                                    && let Some(&first) = new_indices.first()
-                                {
-                                    self.nav.current_tab = first;
-                                }
-                            }
-                        }
-                        KeyCode::Down => {
-                            // Open Nav Menu ONLY if category has > 1 item
-                            let current_cat = pages[self.nav.current_tab].category;
-                            let count = pages.iter().filter(|p| p.category == current_cat).count();
-                            if count > 1 {
-                                self.nav.menu_open = true;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            Action::Mouse(mouse) => {
-                let pages = get_pages();
-                if let Some(page) = pages.get(self.nav.current_tab) {
-                    let _ = (page.handle_mouse)(self, mouse);
-                }
-            }
+            Action::Key(key) => return self.handle_key_event(key).await,
+            Action::Mouse(mouse) => self.handle_mouse_event(mouse),
             Action::UserLoaded(res) => {
                 self.user_loading = false;
                 match *res {
@@ -716,9 +376,7 @@ impl App {
                         self.recalculate_energy();
                         self.recalculate_unpulsed();
                     }
-                    Err(e) => {
-                        self.error = Some(e.to_string());
-                    }
+                    Err(e) => self.error = Some(e.to_string()),
                 }
             }
             Action::PulsesLoaded(res) => {
@@ -728,22 +386,13 @@ impl App {
                         self.recent_pulses = pulses;
                         self.pulses_error = None;
                     }
-                    Err(e) => {
-                        self.pulses_error = Some(e.to_string());
-                    }
+                    Err(e) => self.pulses_error = Some(e.to_string()),
                 }
             }
             Action::ComputersLoaded(res) => {
                 self.computers_loading = false;
-                match res {
-                    Ok(comps) => {
-                        self.computers = comps;
-                    }
-                    Err(_e) => {
-                        // Maybe store computer error specifically?
-                        // For now just log or ignore? Or use global error?
-                        // Let's rely on individual tab error rendering if we add it.
-                    }
+                if let Ok(comps) = res {
+                    self.computers = comps;
                 }
             }
             Action::KeyboardHeatmapLoaded(map, source) => {
@@ -763,118 +412,317 @@ impl App {
                 self.mouse.screen_heatmap = grid;
                 self.error = None;
             }
-            Action::MouseHeatmapError(e) => {
-                self.error = Some(e);
-            }
+            Action::MouseHeatmapError(e) => self.error = Some(e),
             Action::MouseStatsLoaded(stats) => {
                 self.mouse.stats = *stats;
                 self.recalculate_unpulsed();
             }
             Action::AppStatsLoaded(res) => match res {
-                Ok(stats) => {
-                    self.apps.stats = stats;
-                }
-                Err(e) => {
-                    self.error = Some(format!("Failed to load app stats: {}", e));
-                }
+                Ok(stats) => self.apps.stats = stats,
+                Err(e) => self.error = Some(format!("Failed to load app stats: {}", e)),
             },
             Action::NetworkStatsLoaded(res) => match res {
-                Ok(stats) => {
-                    self.network.stats = stats;
-                }
-                Err(e) => {
-                    self.error = Some(format!("Failed to load network stats: {}", e));
-                }
+                Ok(stats) => self.network.stats = stats,
+                Err(e) => self.error = Some(format!("Failed to load network stats: {}", e)),
             },
             Action::WebSocketStatus(connected, error) => {
                 self.kinetic_stats.is_connected = connected;
                 self.kinetic_stats.connection_error = error;
             }
-            Action::RealtimeUpdate(data) => {
-                let profile = self.keyboard.profiles[self.keyboard.profile_index].clone();
-                let _ = self.kinetic_stats.update(&data, &profile);
-
-                // Update Session Heatmap
-                if !data.heatmap.is_empty() {
-                    self.keyboard.session_heatmap = data.heatmap.clone();
-                }
-
-                // Update Scroll Meters with absolute total (User Baseline + Unpulsed)
-                // 1 tick = 0.016 meters (1.6 cm)
-                if let Some(user) = &self.user_stats {
-                    let baseline = user.totals.scrolls;
-                    let unpulsed = data.unpulsed_scrolls.max(0) as u64;
-                    let total = baseline + unpulsed;
-
-                    self.mouse.current_total_scrolls = total;
-
-                    if self.mouse.session_start_scrolls.is_none() {
-                        self.mouse.session_start_scrolls = Some(total);
-                    }
-
-                    let display_scrolls = match self.mouse.scroll_mode {
-                        ScrollMode::Lifetime => total,
-                        ScrollMode::Session => {
-                            total.saturating_sub(self.mouse.session_start_scrolls.unwrap_or(total))
-                        }
-                    };
-
-                    self.mouse.scroll_meters = display_scrolls as f64 * 0.016;
-                }
-            }
-            Action::DebugInfo(msg) => {
-                self.kinetic_stats.debug_info = Some(msg);
-            }
-            Action::PopupSelect => {
-                if let Some(selected_index) = self.keyboard.layout_list_state.borrow().selected() {
-                    let layouts = KeyboardLayout::all();
-                    // Need to filter again to find the correct item if searching
-                    let filtered: Vec<_> = layouts
-                        .into_iter()
-                        .filter(|l| {
-                            l.to_string()
-                                .to_lowercase()
-                                .contains(&self.keyboard.layout_search_query.to_lowercase())
-                        })
-                        .collect();
-
-                    if let Some(layout) = filtered.get(selected_index) {
-                        self.keyboard.layout = *layout;
-                        self.keyboard.show_layout_popup = false;
-                    }
-                }
-            }
-            Action::TogglePopup => {
-                self.keyboard.show_layout_popup = !self.keyboard.show_layout_popup;
-                // Reset search when opening
-                if self.keyboard.show_layout_popup {
-                    self.keyboard.layout_search_query.clear();
-                    self.keyboard.layout_list_state.borrow_mut().select(Some(0));
-                }
-            }
-            Action::SelectLayout => {
-                // Already handled in PopupSelect, but kept for compatibility if needed
-            }
-            Action::NextLayoutItem => {
-                let mut state = self.keyboard.layout_list_state.borrow_mut();
-                let selected = state.selected().unwrap_or(0);
-                // We don't know the filtered count here easily without recalculating
-                // For simplicity, just increment (the UI rendering handles bounds usually, but logic is better)
-                state.select(Some(selected + 1));
-            }
-            Action::PrevLayoutItem => {
-                let mut state = self.keyboard.layout_list_state.borrow_mut();
-                let selected = state.selected().unwrap_or(0);
-                if selected > 0 {
-                    state.select(Some(selected - 1));
-                }
-            }
+            Action::RealtimeUpdate(data) => self.handle_realtime_update(data),
+            Action::DebugInfo(msg) => self.kinetic_stats.debug_info = Some(msg),
+            Action::PopupSelect => self.handle_popup_select(),
+            Action::TogglePopup => self.handle_toggle_popup(),
+            Action::SelectLayout => {},
+            Action::NextLayoutItem => self.handle_list_nav(1),
+            Action::PrevLayoutItem => self.handle_list_nav(-1),
             Action::PopupSearch(c) => {
                 self.keyboard.layout_search_query.push_str(&c);
                 self.keyboard.layout_list_state.borrow_mut().select(Some(0));
             }
         }
         false
+    }
+
+    fn handle_mouse_event(&mut self, mouse: crossterm::event::MouseEvent) {
+        let pages = get_pages();
+        if let Some(page) = pages.get(self.nav.current_tab) {
+            let _ = (page.handle_mouse)(self, mouse);
+        }
+    }
+
+    async fn handle_key_event(&mut self, key: KeyEvent) -> bool {
+        if self.error.is_some() {
+            self.error = None;
+            return false;
+        }
+
+        if key.code == KeyCode::Char('?') {
+            self.show_help = !self.show_help;
+            return false;
+        }
+
+        if self.show_help {
+             if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
+                 self.show_help = false;
+             }
+             return false;
+        }
+
+        if let Some(k) = self.key_to_api_string(key.code) {
+             *self.keyboard.session_heatmap.entry(k).or_insert(0) += 1;
+        }
+
+        let pages = get_pages();
+        let mut handled = false;
+        if !self.nav.menu_open {
+             if let Some(page) = pages.get(self.nav.current_tab) {
+                 handled = (page.handle_key)(self, key);
+             }
+        }
+
+        if !handled && !self.nav.menu_open && self.nav.current_tab == 4 {
+             handled = self.handle_scroll_tower_shortcuts(key).await;
+        }
+
+        if !handled {
+            return self.handle_navigation(key);
+        }
+        false
+    }
+
+    fn key_to_api_string(&self, code: KeyCode) -> Option<String> {
+        match code {
+            KeyCode::Char(c) => Some(get_api_key_from_char(c)),
+            KeyCode::Enter => Some("RETURN".to_string()),
+            KeyCode::Backspace => Some("BACKSPACE".to_string()),
+            KeyCode::Tab => Some("TAB".to_string()),
+            KeyCode::Esc => Some("ESCAPE".to_string()),
+            KeyCode::Delete => Some("DELETE".to_string()),
+            KeyCode::Insert => Some("INSERT".to_string()),
+            KeyCode::Home => Some("HOME".to_string()),
+            KeyCode::End => Some("END".to_string()),
+            KeyCode::PageUp => Some("PAGEUP".to_string()),
+            KeyCode::PageDown => Some("PAGEDOWN".to_string()),
+            KeyCode::Left => Some("LEFT".to_string()),
+            KeyCode::Right => Some("RIGHT".to_string()),
+            KeyCode::Up => Some("UP".to_string()),
+            KeyCode::Down => Some("DOWN".to_string()),
+            _ => None,
+        }
+    }
+
+    async fn handle_scroll_tower_shortcuts(&mut self, key: KeyEvent) -> bool {
+         match key.code {
+            KeyCode::Char('p') => {
+                self.keyboard.profile_index =
+                    (self.keyboard.profile_index + 1) % self.keyboard.profiles.len();
+                true
+            }
+            KeyCode::Char('w') => {
+                self.trigger_open_window().await;
+                true
+            }
+            KeyCode::Char('m') => {
+                self.mouse.scroll_mode = match self.mouse.scroll_mode {
+                    ScrollMode::Lifetime => ScrollMode::Session,
+                    ScrollMode::Session => ScrollMode::Lifetime,
+                };
+                let total = self.mouse.current_total_scrolls;
+                let display_scrolls = match self.mouse.scroll_mode {
+                    ScrollMode::Lifetime => total,
+                    ScrollMode::Session => total.saturating_sub(
+                        self.mouse.session_start_scrolls.unwrap_or(total),
+                    ),
+                };
+                self.mouse.scroll_meters = display_scrolls as f64 * 0.016;
+                true
+            }
+            _ => false
+        }
+    }
+
+    fn handle_navigation(&mut self, key: KeyEvent) -> bool {
+        let pages = get_pages();
+        let categories = [
+            "Overview", "Input", "Network", "Uptime", "Settings", "Account", "Toys",
+        ];
+        let mut category_map: HashMap<&str, Vec<usize>> = HashMap::new();
+        for (i, page) in pages.iter().enumerate() {
+            category_map.entry(page.category).or_default().push(i);
+        }
+
+        if self.nav.menu_open {
+             let current_cat = pages[self.nav.current_tab].category;
+             let indices = category_map.get(current_cat).unwrap();
+             
+             match key.code {
+                 KeyCode::Esc | KeyCode::Enter => { self.nav.menu_open = false; }
+                 KeyCode::Up | KeyCode::Char('k') => {
+                      if let Some(pos) = indices.iter().position(|&x| x == self.nav.current_tab) {
+                           let new_pos = if pos == 0 { indices.len() - 1 } else { pos - 1 };
+                           self.nav.current_tab = indices[new_pos];
+                      }
+                 }
+                 KeyCode::Down | KeyCode::Char('j') => {
+                      if let Some(pos) = indices.iter().position(|&x| x == self.nav.current_tab) {
+                           let new_pos = if pos == indices.len() - 1 { 0 } else { pos + 1 };
+                           self.nav.current_tab = indices[new_pos];
+                      }
+                 }
+                 KeyCode::Left | KeyCode::Char('h') => self.switch_category(&categories, &category_map, -1),
+                 KeyCode::Right | KeyCode::Char('l') => self.switch_category(&categories, &category_map, 1),
+                 KeyCode::Char(c) => {
+                      if let Some(indices) = category_map.get(current_cat) {
+                           for &idx in indices {
+                                if let Some(page) = pages.get(idx) 
+                                    && page.title.to_lowercase().starts_with(&c.to_string().to_lowercase()) 
+                                {
+                                     self.nav.current_tab = idx;
+                                     self.nav.menu_open = false;
+                                     break;
+                                }
+                           }
+                      }
+                 }
+                 _ => {}
+             }
+             return false;
+        }
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                if self.nav.show_quit_confirm {
+                    self.nav.show_quit_confirm = false;
+                } else {
+                    self.nav.show_quit_confirm = true;
+                }
+            }
+            KeyCode::Enter | KeyCode::Char('y') => {
+                if self.nav.show_quit_confirm {
+                    return true;
+                }
+                if key.code == KeyCode::Enter {
+                     let current_cat = pages[self.nav.current_tab].category;
+                     if let Some(indices) = category_map.get(current_cat) {
+                         if indices.len() > 1 {
+                             self.nav.menu_open = true;
+                         }
+                     }
+                }
+            }
+            KeyCode::Char('n') => {
+                if self.nav.show_quit_confirm {
+                    self.nav.show_quit_confirm = false;
+                }
+            }
+            KeyCode::Char('r') => {
+                self.user_loading = true;
+                self.pulses_loading = true;
+                spawn_fetch(self.client.clone(), self.tx.clone());
+            }
+            KeyCode::Tab => self.nav.menu_open = !self.nav.menu_open,
+            KeyCode::Right => self.switch_category(&categories, &category_map, 1),
+            KeyCode::Left => self.switch_category(&categories, &category_map, -1),
+            KeyCode::Down => {
+                 let current_cat = pages[self.nav.current_tab].category;
+                 if let Some(indices) = category_map.get(current_cat) {
+                     if indices.len() > 1 {
+                         self.nav.menu_open = true;
+                     }
+                 }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn switch_category(&mut self, categories: &[&str], map: &HashMap<&str, Vec<usize>>, dir: i32) {
+         let pages = get_pages();
+         let current_cat = pages[self.nav.current_tab].category;
+         if let Some(pos) = categories.iter().position(|&c| c == current_cat) {
+             let new_pos = if dir > 0 {
+                 if pos == categories.len() - 1 { 0 } else { pos + 1 }
+             } else {
+                 if pos == 0 { categories.len() - 1 } else { pos - 1 }
+             };
+             let new_cat = categories[new_pos];
+             if let Some(indices) = map.get(new_cat) {
+                 if let Some(&first) = indices.first() {
+                     self.nav.current_tab = first;
+                 }
+                 if indices.len() <= 1 && self.nav.menu_open {
+                     self.nav.menu_open = false;
+                 }
+             }
+         }
+    }
+
+    fn handle_realtime_update(&mut self, data: RealtimeData) {
+        let profile = self.keyboard.profiles[self.keyboard.profile_index].clone();
+        let _ = self.kinetic_stats.update(&data, &profile);
+
+        if !data.heatmap.is_empty() {
+            self.keyboard.session_heatmap = data.heatmap.clone();
+        }
+
+        if let Some(user) = &self.user_stats {
+            let baseline = user.totals.scrolls;
+            let unpulsed = data.unpulsed_scrolls.max(0) as u64;
+            let total = baseline + unpulsed;
+
+            self.mouse.current_total_scrolls = total;
+
+            if self.mouse.session_start_scrolls.is_none() {
+                self.mouse.session_start_scrolls = Some(total);
+            }
+
+            let display_scrolls = match self.mouse.scroll_mode {
+                ScrollMode::Lifetime => total,
+                ScrollMode::Session => {
+                    total.saturating_sub(self.mouse.session_start_scrolls.unwrap_or(total))
+                }
+            };
+
+            self.mouse.scroll_meters = display_scrolls as f64 * 0.016;
+        }
+    }
+
+    fn handle_popup_select(&mut self) {
+        if let Some(selected_index) = self.keyboard.layout_list_state.borrow().selected() {
+            let layouts = KeyboardLayout::all();
+            let filtered: Vec<_> = layouts
+                .into_iter()
+                .filter(|l| {
+                    l.to_string()
+                        .to_lowercase()
+                        .contains(&self.keyboard.layout_search_query.to_lowercase())
+                })
+                .collect();
+
+            if let Some(layout) = filtered.get(selected_index) {
+                self.keyboard.layout = *layout;
+                self.keyboard.show_layout_popup = false;
+            }
+        }
+    }
+
+    fn handle_toggle_popup(&mut self) {
+        self.keyboard.show_layout_popup = !self.keyboard.show_layout_popup;
+        if self.keyboard.show_layout_popup {
+            self.keyboard.layout_search_query.clear();
+            self.keyboard.layout_list_state.borrow_mut().select(Some(0));
+        }
+    }
+
+    fn handle_list_nav(&mut self, dir: i32) {
+        let mut state = self.keyboard.layout_list_state.borrow_mut();
+        let selected = state.selected().unwrap_or(0);
+        if dir > 0 {
+             state.select(Some(selected + 1));
+        } else if selected > 0 {
+             state.select(Some(selected - 1));
+        }
     }
 
     pub fn get_uptime(&self) -> String {

@@ -94,6 +94,42 @@ pub fn draw(f: &mut Frame, app: &App) {
 
         f.render_widget(p, area);
     }
+
+    if app.show_help {
+        let area = centered_rect(60, 60, f.area());
+        f.render_widget(Clear, area);
+        
+        let block = Block::default()
+            .title(" Help ")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(Color::Black)); // Ensure opacity
+            
+        let inner_area = block.inner(area);
+        f.render_widget(block, area);
+
+        let help_text = vec![
+            Line::from(Span::styled("Navigation", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
+            Line::from("  Tab            : Toggle Category Menu"),
+            Line::from("  h/l/Left/Right : Switch Category"),
+            Line::from("  j/k/Up/Down    : Navigate Menus / Lists"),
+            Line::from("  Enter          : Select / Expand Menu"),
+            Line::from(""),
+            Line::from(Span::styled("Global", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
+            Line::from("  ?              : Toggle Help"),
+            Line::from("  r              : Refresh Data"),
+            Line::from("  q / Esc        : Quit (or Close Popup)"),
+            Line::from(""),
+            Line::from(Span::styled("Scroll Tower", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
+            Line::from("  p              : Switch Profile"),
+            Line::from("  w              : Open Window"),
+            Line::from("  m              : Toggle Metric/Lifetime"),
+        ];
+
+        let p = Paragraph::new(help_text)
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(p, inner_area);
+    }
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
